@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Слайди локацій</title>
+<?!= include('Wizard_css'); ?>
+<script>
+window.__errors = [];
+window.onerror = function (msg, src, line, col) { window.__errors.push(String(msg) + ' @ ' + (src || '?') + ':' + line + ':' + col); };
+window.addEventListener('unhandledrejection', function (e) { var r = e && e.reason; window.__errors.push('unhandledrejection: ' + ((r && r.message) || String(r))); });
+window.__BOOT = <?!= boot ?>;
+</script>
+</head>
+<body>
+
+<header id="top">
+  <div class="brand">Слайди локацій</div>
+  <div class="who" id="who"></div>
+  <button id="reload" class="btn ghost" title="Перечитати заявки з таблиці">↻ Оновити список</button>
+</header>
+
+<main id="main">
+  <aside id="list">
+    <div class="listbar">
+      <input id="q" type="search" placeholder="Пошук: місто, адреса, МРМ…" autocomplete="off">
+      <label class="chk"><input type="checkbox" id="onlyNew" checked> лише без слайда</label>
+    </div>
+    <div id="rows" class="rows"><div class="muted pad">Завантаження заявок…</div></div>
+  </aside>
+
+  <section id="wiz">
+    <div id="empty" class="empty">
+      <div class="big">Оберіть заявку зліва</div>
+      <div class="muted">Майстер покаже дані з форми, фото й карту, а слайд збере за один клік.</div>
+    </div>
+
+    <div id="form" style="display:none">
+      <div class="head">
+        <div class="h1"><span id="hCity"></span><span class="muted">, </span><span id="hAddr"></span></div>
+        <div class="meta" id="hMeta"></div>
+        <div class="meta warn" id="hSlide" style="display:none"></div>
+      </div>
+
+      <div class="card">
+        <div class="ct">Таблиця на слайді</div>
+        <div class="grid4">
+          <label>Адреса<input id="fAddr" type="text"></label>
+          <label>Площа, м²<input id="fArea" type="text" inputmode="decimal"><small id="fAreaRaw" class="muted"></small></label>
+          <label>Вартість, грн<input id="fPrice" type="text" inputmode="numeric"><small id="fPriceRaw" class="muted"></small></label>
+          <label>Вартість за м²<input id="fM2" type="text" readonly tabindex="-1"><small class="muted">рахується само</small></label>
+        </div>
+        <div id="priceHint" class="hint" style="display:none"></div>
+      </div>
+
+      <div class="card">
+        <div class="ct">Тексти</div>
+        <div class="grid2">
+          <label>Пропозиція<input id="fProp" type="text"><small class="muted">на слайді: «Пропозиція: …»</small></label>
+          <label>Примітка під фото<input id="fNote" type="text" placeholder="напр. Рампи під орендаря (до 5 шт)"><small class="muted">порожньо — без підпису</small></label>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="ct">Фото <span class="muted" id="photoCount"></span>
+          <span class="right"><button class="btn small ghost" id="selAll">Усі</button> <button class="btn small ghost" id="selNone">Жодного</button></span>
+        </div>
+        <div class="muted small">Клік — обрати або зняти. Номер — порядок на слайді; стрілки міняють місцями.</div>
+        <div id="photos" class="thumbs"></div>
+        <div id="layoutNote" class="hint"></div>
+      </div>
+
+      <div class="card">
+        <div class="ct">Карта</div>
+        <div class="coords">
+          <label>Широта<input id="fLat" type="text" inputmode="decimal"></label>
+          <label>Довгота<input id="fLng" type="text" inputmode="decimal"></label>
+          <button class="btn ghost" id="geoBtn" title="Знайти адресу геокодером">Знайти за адресою</button>
+          <button class="btn ghost" id="saveCoords">Зберегти координати</button>
+          <a class="btn" id="openMap" target="_blank" rel="noopener">Відкрити карту мережі ↗</a>
+        </div>
+        <div id="coordsNote" class="hint"></div>
+        <div class="ct sub">Знімок карти
+          <span class="right"><button class="btn small ghost" id="shotsRefresh">↻ Оновити список</button>
+          <label class="btn small ghost file">Завантажити файл<input type="file" id="shotFile" accept="image/png,image/jpeg"></label></span>
+        </div>
+        <div class="muted small">На карті мережі натисніть «Зберегти карту в Drive» — знімок зʼявиться тут. Найновіший обирається сам.</div>
+        <div id="shots" class="thumbs"></div>
+      </div>
+
+      <div class="card">
+        <div class="ct">Дека</div>
+        <div class="deckrow">
+          <select id="deck"></select>
+          <button class="btn ghost" id="newDeck">+ Нова дека</button>
+          <a id="deckLink" class="lnk" target="_blank" rel="noopener" style="display:none">відкрити деку ↗</a>
+        </div>
+      </div>
+
+      <div class="actions">
+        <button class="btn primary" id="build">Створити слайд</button>
+        <span id="buildMsg" class="muted"></span>
+      </div>
+      <div id="result" class="result" style="display:none"></div>
+    </div>
+  </section>
+</main>
+
+<footer id="foot">
+  <a href="#" id="colsToggle">Колонки форми</a>
+  <pre id="cols" style="display:none"></pre>
+</footer>
+
+<?!= include('Wizard_js'); ?>
+</body>
+</html>

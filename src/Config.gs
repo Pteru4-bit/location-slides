@@ -1,0 +1,116 @@
+/***********************************************************************
+ *  Config — усі налаштування «Слайдів локацій» в одному місці.
+ *
+ *  Ідентифікатори можна вписати сюди або (зручніше, без правки коду)
+ *  покласти у Script Properties з такими самими іменами малими літерами:
+ *  responses_ss_id, template_deck_id, map_shots_folder_id, decks_folder_id,
+ *  data_ss_id, map_web_app_url. Значення в CFG має пріоритет.
+ ***********************************************************************/
+
+var CFG = {
+  /* ── Джерела ── */
+  RESPONSES_SS_ID: '',      /* таблиця відповідей Google Форми (заявки МРМ) */
+  RESPONSES_SHEET: '',      /* назва аркуша; порожньо = перший аркуш, чия назва починається з «Відповіді», інакше перший */
+  TEMPLATE_DECK_ID: '',     /* Google Slides із майстром НП (імпортований PPTX) — джерело для нових дек */
+  MAP_SHOTS_FOLDER_ID: '',  /* папка, куди карта мережі зберігає PNG; той самий ID стоїть у Config.gs карти */
+  DECKS_FOLDER_ID: '',      /* куди складати нові деки; порожньо = корінь Диска власника */
+  DATA_SS_ID: '',           /* таблиця «Слайди локацій — дані» (Деки, Лог); створюється initDataSpreadsheet() */
+  MAP_WEB_APP_URL: '',      /* URL веб-застосунку карти мережі — для кнопки «Відкрити карту» */
+
+  /* Хто може відкривати майстер. Порожньо = будь-хто з домену (веб-застосунок
+     і так відкритий лише домену). Список — лише ці адреси. */
+  ALLOWED_EMAILS: [],
+
+  /* ── Поведінка ── */
+  ROWS_LIMIT: 80,           /* скільки останніх заявок показувати в списку */
+  THUMB_PX: 320,            /* мініатюри в майстрі */
+  IMAGE_PX: 1600,           /* ширина JPEG, який іде на слайд (мініатюра Диска) */
+  SHOT_ZOOM: 15,            /* масштаб, з яким відкривається карта мережі з майстра */
+
+  /* ── Колонки форми ──────────────────────────────────────────────────
+     Кожна логічна колонка шукається за ЗАГОЛОВКОМ (перший заголовок, що
+     містить один із шаблонів, без регістру), а якщо не знайдено — береться
+     літера. Порядок шаблонів важливий: «дата огляду» перевіряється раніше
+     за «дата», щоб не зачепити «Дата розгляду». Перевірити, як лягли
+     колонки, — debugHeaders() у редакторі або блок «Колонки» внизу майстра.
+     Порожній match = завжди літера. */
+  COLS: {
+    ts:         { match: ['позначка часу', 'timestamp', 'отметка времени'], letter: 'A' },
+    date:       { match: ['дата огляду', 'дата'],                       letter: 'B' },
+    author:     { match: ['мрм', 'хто подав', 'піб', 'прізвище'],        letter: 'C' },
+    region:     { match: ['область'],                                    letter: 'D' },
+    city:       { match: ['місто', 'населен'],                           letter: 'E' },
+    address:    { match: ['адрес'],                                      letter: 'F' },
+    deal:       { match: ['оренда', 'купівл', 'тип угоди'],              letter: 'G' },
+    area:       { match: ['площа'],                                      letter: 'H' },
+    price:      { match: ['вартість', 'ціна'],                           letter: 'I' },
+    ramps:      { match: ['рамп'],                                       letter: 'J' },
+    comment:    { match: ['комент', 'оголош', 'примітк'],                letter: 'N' },
+    objType:    { match: ['тип обʼєкта', 'формат', 'що відкри'],         letter: 'O' },
+    reviewDate: { match: ['дата розгляду', 'дата рішення'],              letter: 'P' },
+    reviewer:   { match: ['розглянув', 'відповідальн'],                  letter: 'Q' },
+    decision:   { match: ['рішення', 'статус', 'результат'],             letter: 'R' },
+    branch:     { match: ['філія', 'регіон', 'дирекція'],                letter: 'S' },
+    source:     { match: ['джерело', 'звідки'],                          letter: 'T' },
+    mapLink:    { match: ['google maps', 'на карті', 'посилання на карт', 'координат'], letter: 'V' }
+  },
+  /* Фото: УСІ колонки, чий заголовок містить шаблон; інакше — літери. */
+  PHOTO_MATCH: ['фото', 'світлин', 'зображ'],
+  PHOTO_LETTERS: ['L', 'M', 'U'],
+
+  /* Службові колонки, які майстер дописує праворуч від колонок форми
+     (створює сам, якщо їх ще немає). Форма їх не чіпає. */
+  OUT: {
+    slide:   'Слайд',
+    updated: 'Слайд: оновлено',
+    by:      'Слайд: ким',
+    deck:    'Слайд: дека',
+    coords:  'Координати'
+  },
+
+  /* Аркуші таблиці даних. */
+  DECKS_SHEET: 'Деки',      /* id | назва | url | створено | ким | слайдів */
+  LOG_SHEET: 'Лог'          /* час | пошта | подія | деталі */
+};
+
+/* Значення з CFG або зі Script Properties (ім'я малими літерами). */
+function cfg_(name) {
+  if (CFG[name]) return CFG[name];
+  var v = PropertiesService.getScriptProperties().getProperty(name.toLowerCase());
+  return v || '';
+}
+
+/* Створює таблицю «Слайди локацій — дані» з аркушами Деки + Лог (разово). */
+function initDataSpreadsheet() {
+  var existing = cfg_('DATA_SS_ID');
+  if (existing) { Logger.log('Таблиця даних вже налаштована: ' + existing); return existing; }
+  var ss = SpreadsheetApp.create('Слайди локацій — дані');
+  var d = ss.getActiveSheet().setName(CFG.DECKS_SHEET);
+  d.appendRow(['id', 'назва', 'url', 'створено', 'ким', 'слайдів']);
+  d.setFrozenRows(1);
+  var lg = ss.insertSheet(CFG.LOG_SHEET);
+  lg.appendRow(['час', 'пошта', 'подія', 'деталі']);
+  lg.setFrozenRows(1);
+  PropertiesService.getScriptProperties().setProperty('data_ss_id', ss.getId());
+  Logger.log('Створено таблицю даних: ' + ss.getId() + ' (' + ss.getUrl() + ')');
+  return ss.getId();
+}
+
+/* Створює папку для карт зі скріншотами, якщо ID ще не задано (разово).
+   Той самий ID треба вписати в Config.gs карти мережі (SLIDE_SHOTS_FOLDER_ID)
+   або в її Script Properties (slide_shots_folder_id). */
+function initMapShotsFolder() {
+  var existing = cfg_('MAP_SHOTS_FOLDER_ID');
+  if (existing) { Logger.log('Папка карт вже налаштована: ' + existing); return existing; }
+  var f = DriveApp.createFolder('Карти для слайдів локацій');
+  PropertiesService.getScriptProperties().setProperty('map_shots_folder_id', f.getId());
+  Logger.log('Створено папку карт: ' + f.getId() + ' (' + f.getUrl() + ') — впишіть цей ID у карту мережі.');
+  return f.getId();
+}
+
+/* Друкує, як лягли колонки форми, і чи є службові. Запускати після зміни форми. */
+function debugHeaders() {
+  var r = columnReport_();
+  r.forEach(function (line) { Logger.log(line); });
+  return r;
+}
