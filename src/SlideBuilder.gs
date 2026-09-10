@@ -72,12 +72,11 @@ function addTitle_(slide, k, city) {
 }
 
 /* Таблиця 2×4 як на зразках: сірий заголовок, значення по центру.
-   Повертає objectId для рамок (їх ставить batchUpdate). */
+   Ширини колонок, висоти рядків і рамки SlidesApp не вміє — їх ставить
+   batchUpdate (applyBatch_) за objectId, який повертається звідси. */
 function addTable_(slide, k, cells) {
   var b = box_(GEOM.table.box, k);
   var table = slide.insertTable(2, 4, b.left, b.top, b.width, b.height);
-  GEOM.table.cols.forEach(function (w, i) { table.getColumn(i).setWidth(w * PT * k); });
-  GEOM.table.rows.forEach(function (h, i) { table.getRow(i).setMinimumHeight(h * PT * k); });
   for (var r = 0; r < 2; r++) {
     for (var c = 0; c < 4; c++) {
       var cell = table.getCell(r, c);
@@ -110,9 +109,20 @@ function addImage_(slide, slotGeom, k, blob, crops) {
   return img;
 }
 
-/* Обрізання + рамки таблиці одним запитом Slides API. */
-function applyBatch_(presId, crops, tableId) {
+/* Обрізання картинок + ширини колонок, висоти рядків і рамки таблиці одним
+   запитом Slides API. */
+function applyBatch_(presId, crops, tableId, k) {
   var reqs = [];
+  if (tableId) {
+    GEOM.table.cols.forEach(function (w, i) {
+      reqs.push({ updateTableColumnProperties: { objectId: tableId, columnIndices: [i],
+        tableColumnProperties: { columnWidth: { magnitude: w * PT * k, unit: 'PT' } }, fields: 'columnWidth' } });
+    });
+    GEOM.table.rows.forEach(function (h, i) {
+      reqs.push({ updateTableRowProperties: { objectId: tableId, rowIndices: [i],
+        tableRowProperties: { minRowHeight: { magnitude: h * PT * k, unit: 'PT' } }, fields: 'minRowHeight' } });
+    });
+  }
   crops.forEach(function (c) {
     var any = c.crop.leftOffset || c.crop.rightOffset || c.crop.topOffset || c.crop.bottomOffset;
     if (!any) return;
@@ -126,8 +136,17 @@ function applyBatch_(presId, crops, tableId) {
       fields: 'weight,dashStyle,tableBorderFill' } });
   }
   if (!reqs.length) return { ok: true, n: 0 };
-  Slides.Presentations.batchUpdate({ requests: reqs }, presId);
-  return { ok: true, n: reqs.length };
+  try {
+    Slides.Presentations.batchUpdate({ requests: reqs }, presId);
+    return { ok: true, n: reqs.length };
+  } catch (e) {
+    /* Рамки — найвибагливіший запит; якщо відмовив увесь пакет, повторюємо
+       без них: обрізання й розміри таблиці важливіші за рамки. */
+    var core = reqs.filter(function (r) { return !r.updateTableBorderProperties; });
+    if (core.length === reqs.length) throw e;
+    Slides.Presentations.batchUpdate({ requests: core }, presId);
+    return { ok: true, n: core.length, note: 'рамки таблиці не поставлено: ' + ((e && e.message) || e) };
+  }
 }
 
 /* Запасний шлях без API: вписати картинку в слот, не обрізаючи. */
@@ -180,27 +199,33 @@ function buildSlide_(payload, email) {
   }
   var slide = blankSlide_(pres, index);
   var G = GEOM[layoutKind];
+  var tableId, crops = [];
 
-  addTitle_(slide, k, rec.city);
-  var tableId = addTable_(slide, k, cells);
-  var crops = [];
-  blobs.forEach(function (b, i) { addImage_(slide, G.slots[i], k, b, crops); });
-  var proposal = normText(p.proposal) || rec.proposalDefault;
-  textBox_(slide, G.proposal, k, 'Пропозиція: ' + proposal, 24, true, STYLE.textColor,
-           layoutKind === 'row' ? SlidesApp.ParagraphAlignment.CENTER : SlidesApp.ParagraphAlignment.START);
-  var note = normText(p.note);
-  if (note) textBox_(slide, G.note, k, note, 16, false, STYLE.textColor);
-
-  slide.getNotesPage().getSpeakerNotesShape().getText().setText(JSON.stringify({
-    key: rec.key, row: rec.row, by: email, at: new Date().toISOString(), layout: layoutKind,
-    photos: photos, map: p.mapFileId || '', coords: p.coords || null
-  }));
+  /* Будь-який збій усередині — слайд прибирається, презентація лишається
+     чистою, а помилка йде людині як є. */
+  try {
+    addTitle_(slide, k, rec.city);
+    tableId = addTable_(slide, k, cells);
+    blobs.forEach(function (b, i) { addImage_(slide, G.slots[i], k, b, crops); });
+    var proposal = normText(p.proposal) || rec.proposalDefault;
+    textBox_(slide, G.proposal, k, 'Пропозиція: ' + proposal, 24, true, STYLE.textColor,
+             layoutKind === 'row' ? SlidesApp.ParagraphAlignment.CENTER : SlidesApp.ParagraphAlignment.START);
+    var note = normText(p.note);
+    if (note) textBox_(slide, G.note, k, note, 16, false, STYLE.textColor);
+    slide.getNotesPage().getSpeakerNotesShape().getText().setText(JSON.stringify({
+      key: rec.key, row: rec.row, by: email, at: new Date().toISOString(), layout: layoutKind,
+      photos: photos, map: p.mapFileId || '', coords: p.coords || null
+    }));
+  } catch (eBuild) {
+    try { slide.remove(); pres.saveAndClose(); } catch (e0) {}
+    throw eBuild;
+  }
   removePlaceholder_(pres);
   var slideId = slide.getObjectId();
   pres.saveAndClose();
 
   var cropNote = '';
-  try { applyBatch_(deckId, crops, tableId); }
+  try { var br = applyBatch_(deckId, crops, tableId, k); if (br && br.note) cropNote = br.note; }
   catch (e) {
     cropNote = 'обрізання через API не вдалося (' + ((e && e.message) || e) + '), картинки вписано без обрізання';
     try { var p2 = SlidesApp.openById(deckId); fitContain_(p2, crops); p2.saveAndClose(); } catch (e2) {}
