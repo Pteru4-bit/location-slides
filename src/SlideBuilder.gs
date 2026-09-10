@@ -149,9 +149,9 @@ function buildSlide_(payload, email) {
   var p = payload || {};
   var rec = recordByKey_(String(p.key || ''), Number(p.row) || 0);
   var deckId = String(p.deckId || '');
-  if (!deckId) throw new Error('Оберіть деку.');
+  if (!deckId) throw new Error('Оберіть презентацію.');
   var deck = deckEntry_(deckId);
-  if (!deck) throw new Error('Такої деки немає в реєстрі.');
+  if (!deck) throw new Error('Такої презентації немає в реєстрі.');
 
   var photos = (p.photos || []).map(String).filter(Boolean);
   var images = photos.slice();
@@ -164,8 +164,8 @@ function buildSlide_(payload, email) {
   var cells = [normText(p.address) || rec.address, area ? formatInt(area) : normText(rec.areaRaw),
                price ? formatInt(price) : '', (price && area) ? formatInt(pricePerM2(price, area)) : ''];
 
-  /* Картинки тягнемо ДО відкриття деки: якщо якийсь файл не відкривається,
-     дека лишається неторканою. */
+  /* Картинки тягнемо ДО відкриття презентації: якщо якийсь файл не відкривається,
+     презентація лишається неторканою. */
   var blobs = images.map(slideImageBlob_);
 
   var pres = SlidesApp.openById(deckId);

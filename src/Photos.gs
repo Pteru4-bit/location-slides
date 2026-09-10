@@ -58,20 +58,42 @@ function dataUrl_(blob) {
 }
 
 /* Записи для майстра: мініатюра THUMB_PX як data URL. Помилка одного файлу
-   не ламає решту — людина побачить, який саме файл не відкрився. */
+   не ламає решту — людина побачить, який саме файл не відкрився.
+   Мініатюри тягнуться ОДНИМ fetchAll: у заявці буває 10–15 фото, і по черзі
+   це десять секунд очікування замість двох. */
 function photoEntries_(ids) {
-  return (ids || []).map(function (id) {
-    try {
-      var f = driveFile_(id);
-      var b = thumbBlob_(f, CFG.THUMB_PX);
-      if (!b && SLIDES_NATIVE_MIME[f.mimeType] && Number(f.size || 0) < 4 * 1024 * 1024) {
-        b = DriveApp.getFileById(id).getBlob();
-      }
-      return { id: id, ok: true, name: f.name || id, mime: f.mimeType || '', url: f.webViewLink || ('https://drive.google.com/open?id=' + id),
-               thumb: b ? dataUrl_(b) : '' };
-    } catch (e) {
-      return { id: id, ok: false, name: id, error: (e && e.message) || String(e), thumb: '' };
+  var metas = (ids || []).map(function (id) {
+    try { return { id: id, f: driveFile_(id) }; }
+    catch (e) { return { id: id, error: (e && e.message) || String(e) }; }
+  });
+  var token = ScriptApp.getOAuthToken();
+  var reqs = [], at = [];
+  metas.forEach(function (m, i) {
+    if (m.f && m.f.thumbnailLink) {
+      reqs.push({ url: thumbLinkSized_(m.f.thumbnailLink, CFG.THUMB_PX), headers: { Authorization: 'Bearer ' + token },
+                  muteHttpExceptions: true, followRedirects: true });
+      at.push(i);
     }
+  });
+  var resps = [];
+  if (reqs.length) {
+    try { resps = UrlFetchApp.fetchAll(reqs); } catch (e) { resps = []; }
+  }
+  var thumbs = {};
+  resps.forEach(function (r, j) {
+    try {
+      var ct = String(r.getHeaders()['Content-Type'] || r.getHeaders()['content-type'] || '');
+      if (r.getResponseCode() === 200 && ct.indexOf('image/') === 0) thumbs[at[j]] = dataUrl_(r.getBlob());
+    } catch (e2) {}
+  });
+  return metas.map(function (m, i) {
+    if (!m.f) return { id: m.id, ok: false, name: m.id, error: m.error, thumb: '' };
+    var f = m.f, thumb = thumbs[i] || '';
+    if (!thumb && SLIDES_NATIVE_MIME[f.mimeType] && Number(f.size || 0) < 4 * 1024 * 1024) {
+      try { thumb = dataUrl_(DriveApp.getFileById(m.id).getBlob()); } catch (e3) {}
+    }
+    return { id: m.id, ok: true, name: f.name || m.id, mime: f.mimeType || '',
+             url: f.webViewLink || ('https://drive.google.com/open?id=' + m.id), thumb: thumb };
   });
 }
 

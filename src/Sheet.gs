@@ -55,6 +55,12 @@ function columns_() {
   Object.keys(CFG.OUT).forEach(function (k) {
     var name = CFG.OUT[k];
     var i = header.indexOf(name);
+    if (i === -1) {
+      /* Стара назва → перейменувати заголовок на місці, дані лишаються. */
+      var aliases = (CFG.OUT_ALIASES || {})[k] || [];
+      for (var a = 0; a < aliases.length && i === -1; a++) i = header.indexOf(aliases[a]);
+      if (i !== -1) { sh.getRange(1, i + 1).setValue(name); header[i] = name; }
+    }
     if (i === -1) missing.push(k); else cols.out[k] = i;
   });
   if (missing.length) {
@@ -71,9 +77,16 @@ function columns_() {
   return cols;
 }
 
+function columnLetter_(i) {
+  var n = i + 1, s = '';
+  while (n > 0) { var r = (n - 1) % 26; s = String.fromCharCode(65 + r) + s; n = Math.floor((n - 1) / 26); }
+  return s;
+}
+
 function columnReport_() {
   var c = columns_();
   var lines = ['Аркуш: ' + responsesSheet_().getName()];
+  lines.push('Заголовки: ' + c.header.map(function (h, i) { return columnLetter_(i) + ' «' + h + '»'; }).join(' · '));
   Object.keys(CFG.COLS).forEach(function (k) {
     lines.push(k + ' → колонка ' + (c.idx[k] + 1) + ' (' + c.how[k] + ')');
   });

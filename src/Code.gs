@@ -2,7 +2,7 @@
  *  Code — точка входу веб-застосунку «Слайди локацій» і API для майстра.
  *
  *  Застосунок виконується від імені власника (як карта мережі), тому
- *  доступ до файлів форми, шаблону й дек потрібен лише йому. Користувачу
+ *  доступ до файлів форми, шаблону й презентацій потрібен лише йому. Користувачу
  *  досить посилання; коло користувачів звужує CFG.ALLOWED_EMAILS.
  ***********************************************************************/
 
@@ -114,7 +114,7 @@ function apiColumnReport() {
   return { ok: true, lines: columnReport_() };
 }
 
-/* Перевірка з редактора: таблиця, колонки, папка карт, шаблон, деки. */
+/* Перевірка з редактора: таблиця, колонки, папка карт, шаблон, презентації. */
 function checkSetup() {
   var out = [];
   try { out.push('✅ Таблиця відповідей: ' + responsesSs_().getName() + ' / аркуш «' + responsesSheet_().getName() + '»'); }
@@ -123,7 +123,7 @@ function checkSetup() {
   try { out.push('✅ Папка карт: ' + shotsFolder_().getName()); } catch (e2) { out.push('❌ ' + e2.message); }
   try { var t = cfg_('TEMPLATE_DECK_ID'); out.push(t ? '✅ Шаблон: ' + SlidesApp.openById(t).getName() : '❌ Не задано TEMPLATE_DECK_ID'); }
   catch (e3) { out.push('❌ шаблон: ' + e3.message); }
-  try { out.push('✅ Дек у реєстрі: ' + listDecks_().length); } catch (e4) { out.push('❌ реєстр дек: ' + e4.message); }
+  try { out.push('✅ Презентацій у реєстрі: ' + listDecks_().length); } catch (e4) { out.push('❌ реєстр презентацій: ' + e4.message); }
   out.push(cfg_('MAP_WEB_APP_URL') ? '✅ URL карти мережі задано' : '⚠️ MAP_WEB_APP_URL порожній — кнопки «Відкрити карту» не буде');
   out.forEach(function (l) { Logger.log(l); });
   return out;

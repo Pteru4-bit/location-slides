@@ -1,7 +1,7 @@
 /***********************************************************************
- *  Decks — реєстр дек і створення нової з шаблону.
+ *  Decks — реєстр презентацій і створення нової з шаблону.
  *
- *  Одна дека = один розгляд у керівництва. Нова дека — копія шаблону
+ *  Одна презентація = один розгляд у керівництва. Нова презентація — копія шаблону
  *  (Google Slides, у який імпортовано корпоративний PPTX: майстер із
  *  логотипом і шрифтами). Усі слайди шаблону, крім першого, видаляються;
  *  перший лишається як заглушка, бо порожню презентацію Slides не тримає,
@@ -17,6 +17,11 @@ function dataSs_() {
 function decksSheet_() {
   var ss = dataSs_();
   var sh = ss.getSheetByName(CFG.DECKS_SHEET);
+  if (!sh) {
+    (CFG.DECKS_SHEET_ALIASES || []).forEach(function (old) {
+      if (!sh && ss.getSheetByName(old)) { sh = ss.getSheetByName(old); sh.setName(CFG.DECKS_SHEET); }
+    });
+  }
   if (!sh) { sh = ss.insertSheet(CFG.DECKS_SHEET); sh.appendRow(['id', 'назва', 'url', 'створено', 'ким', 'слайдів']); sh.setFrozenRows(1); }
   return sh;
 }
@@ -46,7 +51,7 @@ function listDecks_() {
 
 function createDeck_(name, email) {
   var title = normText(name);
-  if (!title) throw new Error('Вкажіть назву деки.');
+  if (!title) throw new Error('Вкажіть назву презентації.');
   var tplId = cfg_('TEMPLATE_DECK_ID');
   if (!tplId) throw new Error('Не задано TEMPLATE_DECK_ID — шаблон Google Slides із майстром НП.');
   var src = DriveApp.getFileById(tplId);
@@ -60,7 +65,7 @@ function createDeck_(name, email) {
   pres.saveAndClose();
   var url = 'https://docs.google.com/presentation/d/' + copy.getId() + '/edit';
   decksSheet_().appendRow([copy.getId(), title, url, new Date(), email || '', 0]);
-  logEvent_(email, 'нова дека', title + ' ' + url);
+  logEvent_(email, 'нова презентація', title + ' ' + url);
   return { id: copy.getId(), name: title, url: url, created: fmtDateTime_(new Date()), by: email || '', slides: 0 };
 }
 
@@ -80,7 +85,7 @@ function bumpDeckCount_(id, count) {
   }
 }
 
-/* Заглушка шаблону зникає, коли в деці є хоч один справжній слайд. */
+/* Заглушка шаблону зникає, коли в презентації є хоч один справжній слайд. */
 function removePlaceholder_(pres) {
   var slides = pres.getSlides();
   if (slides.length < 2) return;

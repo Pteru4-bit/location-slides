@@ -105,7 +105,7 @@
     if (r.slideUrl) {
       $('hSlide').style.display = '';
       $('hSlide').innerHTML = 'Слайд уже є: <a href="' + esc(r.slideUrl) + '" target="_blank" rel="noopener">відкрити</a> · ' +
-        esc(r.slideDeck) + ' · ' + esc(r.slideUpdated) + (r.slideBy ? ' · ' + esc(r.slideBy) : '') + '. Повторне створення в тій самій деці замінить його.';
+        esc(r.slideDeck) + ' · ' + esc(r.slideUpdated) + (r.slideBy ? ' · ' + esc(r.slideBy) : '') + '. Повторне створення в тій самій презентації замінить його.';
     } else $('hSlide').style.display = 'none';
 
     $('fAddr').value = r.address;
@@ -221,7 +221,10 @@
     a.style.display = '';
     var u = BOOT.mapUrl + (BOOT.mapUrl.indexOf('?') === -1 ? '?' : '&') + 'slide=' + encodeURIComponent(REC ? REC.key : '');
     if (c) u += '&ll=' + c.lat + ',' + c.lng + '&z=' + BOOT.shotZoom;
-    if (REC) u += '&label=' + encodeURIComponent((REC.address ? REC.address + ', ' : '') + REC.city);
+    if (REC) {
+      var addr = String(REC.address || '').replace(/[\s,;]+$/, '');
+      u += '&label=' + encodeURIComponent([addr, REC.city].filter(Boolean).join(', '));
+    }
     a.href = u;
   }
   $('fLat').addEventListener('input', updateMapLink);
@@ -292,22 +295,22 @@
     if (document.visibilityState === 'visible' && REC && !BUSY) refreshShots();
   });
 
-  /* ── Деки ── */
+  /* ── Презентації ── */
   function loadDecks() {
     return api('apiListDecks').then(function (res) {
       DECKS = res.decks || [];
       renderDecks();
-    }).catch(function (e) { flash('Деки: ' + e.message); });
+    }).catch(function (e) { flash('Презентації: ' + e.message); });
   }
   function renderDecks() {
     var sel = $('deck');
     var remembered = '';
     try { remembered = localStorage.getItem('slides.deck') || ''; } catch (e) {}
-    /* Дека, у якій уже є слайд цієї заявки, — перша кандидатка. */
+    /* Презентація, у якій уже є слайд цієї заявки, — перша кандидатка. */
     var own = REC && REC.slideUrl ? (REC.slideUrl.match(/\/presentation\/d\/([-\w]+)/) || [])[1] : '';
     sel.innerHTML = DECKS.map(function (d) {
       return '<option value="' + esc(d.id) + '">' + esc(d.name) + ' · ' + d.slides + ' сл. · ' + esc(d.created) + '</option>';
-    }).join('') || '<option value="">— створіть деку —</option>';
+    }).join('') || '<option value="">— створіть презентацію —</option>';
     var want = (own && DECKS.some(function (d) { return d.id === own; })) ? own
              : (remembered && DECKS.some(function (d) { return d.id === remembered; })) ? remembered
              : (DECKS[0] ? DECKS[0].id : '');
@@ -321,18 +324,18 @@
     if (d) { a.href = d.url; a.style.display = ''; } else a.style.display = 'none';
     try { if (id) localStorage.setItem('slides.deck', id); } catch (e) {}
     var own = REC && REC.slideUrl && REC.slideUrl.indexOf('/d/' + id + '/') !== -1;
-    $('build').textContent = own ? 'Оновити слайд у цій деці' : 'Створити слайд';
+    $('build').textContent = own ? 'Оновити слайд у цій презентації' : 'Створити слайд';
   }
   $('deck').addEventListener('change', deckChanged);
   $('newDeck').addEventListener('click', function () {
-    var name = window.prompt('Назва нової деки (один розгляд = одна дека):', 'Локації на розгляд ' + new Date().toLocaleDateString('uk-UA'));
+    var name = window.prompt('Назва нової презентації (один розгляд = одна презентація):', 'Локації на розгляд ' + new Date().toLocaleDateString('uk-UA'));
     if (!name) return;
     $('newDeck').disabled = true;
     api('apiCreateDeck', name).then(function (res) {
       DECKS.unshift(res.deck);
       renderDecks();
       $('deck').value = res.deck.id; deckChanged();
-      flash('Деку створено: ' + res.deck.name);
+      flash('Презентацію створено: ' + res.deck.name);
     }).catch(function (e) { flash(e.message); }).then(function () { $('newDeck').disabled = false; });
   });
 
@@ -348,7 +351,7 @@
     };
   }
   function validate(p) {
-    if (!p.deckId) return 'Оберіть або створіть деку.';
+    if (!p.deckId) return 'Оберіть або створіть презентацію.';
     var n = p.photos.length + (p.mapFileId ? 1 : 0);
     if (n < 1) return 'Оберіть хоча б одне фото або карту.';
     if (n > BOOT.maxImages) return 'Забагато картинок: максимум ' + BOOT.maxImages + '.';
@@ -361,7 +364,7 @@
     var p = payload();
     var err = validate(p);
     if (err) { showResult(false, err); return; }
-    if (p.replace && !window.confirm('У цій деці вже є слайд цієї заявки. Замінити його?')) return;
+    if (p.replace && !window.confirm('У цій презентації вже є слайд цієї заявки. Замінити його?')) return;
     BUSY = true; $('build').disabled = true; $('buildMsg').textContent = 'Збираю слайд… зазвичай 10–30 секунд';
     $('result').style.display = 'none';
     api('apiBuildSlide', p).then(function (res) {
@@ -369,10 +372,10 @@
       var r = ROWS.filter(function (x) { return x.key === REC.key; })[0];
       if (r) { r.slideUrl = res.slideUrl; r.slideDeck = res.deckName; }
       showResult(true, (res.replaced ? 'Слайд оновлено' : 'Слайд створено') + ': <a href="' + esc(res.slideUrl) + '" target="_blank" rel="noopener">відкрити слайд ↗</a> · ' +
-        '<a href="' + esc(res.deckUrl) + '" target="_blank" rel="noopener">дека «' + esc(res.deckName) + '»</a>' +
+        '<a href="' + esc(res.deckUrl) + '" target="_blank" rel="noopener">презентація «' + esc(res.deckName) + '»</a>' +
         (res.note ? '<div class="small">' + esc(res.note) + '</div>' : '') +
         ' <button class="btn small" id="nextRow">Наступна заявка без слайда →</button>');
-      $('hSlide').style.display = ''; $('hSlide').textContent = 'Слайд щойно збережено в деку «' + res.deckName + '».';
+      $('hSlide').style.display = ''; $('hSlide').textContent = 'Слайд щойно збережено в презентацію «' + res.deckName + '».';
       renderRows(); loadDecks();
     }).catch(function (e) {
       showResult(false, 'Не вдалося: ' + e.message);

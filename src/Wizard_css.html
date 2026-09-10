@@ -43,8 +43,11 @@ input:focus, select:focus { outline: 2px solid #9cc0f5; border-color: #9cc0f5; }
 .small { font-size: 12px; }
 .pad { padding: 12px; }
 .thumbs { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 10px; }
-.th { position: relative; width: 150px; height: 112px; border-radius: 8px; overflow: hidden; border: 2px solid transparent; background: #eef1f4; cursor: pointer; }
-.th img { width: 100%; height: 100%; object-fit: cover; display: block; }
+/* Мініатюра показує фото ЦІЛКОМ (contain, без обрізання країв): людина
+   обирає, що піде на слайд, і має бачити весь кадр. Обрізання під слот
+   робиться вже на слайді. */
+.th { position: relative; width: 200px; height: 150px; border-radius: 8px; overflow: hidden; border: 2px solid transparent; background: #dfe4ea; cursor: pointer; }
+.th img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .th.on { border-color: var(--blue); box-shadow: 0 0 0 2px #cfe0fb; }
 .th .n { position: absolute; left: 6px; top: 6px; background: var(--blue); color: #fff; font-weight: 700; font-size: 12px; width: 22px; height: 22px; border-radius: 50%; display: none; align-items: center; justify-content: center; }
 .th.on .n { display: flex; }
