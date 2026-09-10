@@ -12,7 +12,7 @@ function doGet(e) {
   if (!allowed_(email)) {
     return HtmlService.createHtmlOutput(
       '<p style="font:15px Arial;padding:24px">Доступ до майстра слайдів не надано для <b>' + esc_(email || 'невідомого акаунта') +
-      '</b>. Зверніться до адміністратора.</p>').setTitle('Слайди локацій — доступ');
+      '</b>. Зверніться до адміністратора.</p>').setTitle('Слайди локацій — доступ').setFaviconUrl(CFG.FAVICON_URL);
   }
   var t = HtmlService.createTemplateFromFile('Wizard');
   t.boot = JSON.stringify({
@@ -26,6 +26,7 @@ function doGet(e) {
   logEvent_(email, 'вхід', param.key ? 'key=' + param.key : '');
   return t.evaluate()
     .setTitle('Слайди локацій')
+    .setFaviconUrl(CFG.FAVICON_URL)
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
 }
