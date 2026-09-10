@@ -55,15 +55,17 @@
     }).catch(function (e) { $('rows').innerHTML = '<div class="pad" style="color:#b71c1c">' + esc(e.message) + '</div>'; });
   }
   function renderRows() {
-    var q = $('q').value.trim().toLowerCase(), onlyNew = $('onlyNew').checked;
+    var q = $('q').value.trim().toLowerCase(), onlyNew = $('onlyNew').checked, showRej = $('showRejected').checked;
     var html = ROWS.filter(function (r) {
       if (onlyNew && r.slideUrl) return false;
+      if (!showRej && r.rejected) return false;
       if (!q) return true;
       return [r.city, r.address, r.author, r.objType, r.branch, r.region].join(' ').toLowerCase().indexOf(q) !== -1;
     }).map(function (r) {
       return '<div class="row' + (REC && REC.key === r.key ? ' on' : '') + '" data-key="' + esc(r.key) + '" data-row="' + r.row + '">' +
         '<div class="t">' + esc(r.city) + ', ' + esc(r.address) +
-        (r.slideUrl ? '<span class="badge">є слайд</span>' : '<span class="badge no">без слайда</span>') + '</div>' +
+        (r.slideUrl ? '<span class="badge">є слайд</span>' : '<span class="badge no">без слайда</span>') +
+        (r.rejected ? '<span class="badge rej">не підходить</span>' : '') + '</div>' +
         '<div class="s">' + esc(r.objType || '—') + ' · ' + esc(r.deal || '') + ' · ' + esc(r.date || r.ts) + ' · ' + esc(r.author) +
         (r.photoIds && r.photoIds.length ? ' · фото: ' + r.photoIds.length : ' · без фото') + '</div></div>';
     }).join('');
@@ -71,6 +73,7 @@
   }
   $('q').addEventListener('input', renderRows);
   $('onlyNew').addEventListener('change', renderRows);
+  $('showRejected').addEventListener('change', renderRows);
   $('reload').addEventListener('click', loadRows);
   $('rows').addEventListener('click', function (e) {
     var el = e.target.closest('.row');
@@ -100,8 +103,24 @@
   function fillForm() {
     var r = REC;
     $('hCity').textContent = r.city; $('hAddr').textContent = r.address;
-    $('hMeta').textContent = [r.objType, r.deal, r.region, 'подано ' + r.ts + (r.author ? ' · ' + r.author : ''), r.branch,
-      r.ramps ? 'рампи: ' + r.ramps : '', r.comment ? 'коментар: ' + r.comment : '', r.decision ? 'рішення: ' + r.decision : ''].filter(Boolean).join(' · ');
+    /* Рядок під заголовком: усе з форми, крім того, що йде на слайд.
+       Текст екранується; посилання (оголошення, відео 360) — клікабельні. */
+    var parts = [];
+    var plain = function (t) { if (t) parts.push(esc(t)); };
+    var link = function (url, text, prefix) {
+      if (!url) return;
+      if (/^https?:\/\//i.test(url)) parts.push('<a href="' + esc(url) + '" target="_blank" rel="noopener">' + text + ' ↗</a>');
+      else plain(prefix + url);
+    };
+    plain(r.objType); plain(r.deal); plain(r.region);
+    plain('подано ' + r.ts + (r.author ? ' · ' + r.author : '')); plain(r.branch);
+    if (r.ramps) plain('рампи: ' + r.ramps);
+    if (r.yard) plain('автодвір: ' + r.yard);
+    link(r.comment, 'оголошення', 'коментар: ');
+    link(r.video, 'відео 360', 'відео: ');
+    if (r.decision) plain('причина відмови: ' + r.decision);
+    if (r.rejected) parts.unshift('<span class="badge rej">не підходить — слайд зазвичай не потрібен</span>');
+    $('hMeta').innerHTML = parts.join(' · ');
     if (r.slideUrl) {
       $('hSlide').style.display = '';
       $('hSlide').innerHTML = 'Слайд уже є: <a href="' + esc(r.slideUrl) + '" target="_blank" rel="noopener">відкрити</a> · ' +

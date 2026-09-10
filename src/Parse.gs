@@ -131,10 +131,13 @@ var PROPOSAL_BY_TYPE = {
   'пункт прийому-видачі': 'Відкриття пункту прийому-видачі'
 };
 function defaultProposal(objType) {
-  var t = normText(objType).toLowerCase();
-  if (!t) return 'Відкриття';
+  var raw = normText(objType);
+  var t = raw.toLowerCase();
+  if (!t || /не підходить/.test(t)) return 'Відкриття';
   if (PROPOSAL_BY_TYPE[t]) return PROPOSAL_BY_TYPE[t];
-  return 'Відкриття: ' + normText(objType);
+  /* Кілька значень через кому («Відділення, Депо/термінал») — залишаємо
+     як є після двокрапки: людина сформулює. */
+  return 'Відкриття: ' + raw;
 }
 
 /* Індекс колонки за заголовком: перший заголовок, який МІСТИТЬ будь-який із

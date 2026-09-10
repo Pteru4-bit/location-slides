@@ -96,6 +96,28 @@ eq(P.headerMatch(H, ['немає такого']), -1, 'не знайдено →
 eq(P.headerMatchAll(H, ['фото']), [11, 12, 20], 'усі колонки з «фото» у порядку аркуша');
 eq(P.letterIndex('A'), 0, 'A → 0'); eq(P.letterIndex('V'), 21, 'V → 21'); eq(P.letterIndex('AA'), 26, 'AA → 26');
 
+console.log('Справжні заголовки форми (checkSetup 2026-09-10)');
+const REAL = ['Позначка часу', 'Дата', 'ПІБ МРМ', 'Область', 'Населений пункт', 'Адреса', 'Оренда чи продаж', 'Площа',
+  'Вартість загальна в грн', 'Кількість рамп', 'Наявність автодвору', 'Фото локації ззовні', 'Фото локації всередині',
+  'Посилання на оголошення або КП', 'Підходить для:', 'Дата передачі локації РД ТЛ', 'ПІБ РД ТЛ',
+  'Причина відмови (якщо не підходить під відділення)', 'Регіон', 'Звідки локація', 'Фото автодвору',
+  'Посилання на Google Maps', 'Відео 360 градусів', 'Слайд', 'Слайд: оновлено', 'Слайд: ким', 'Слайд: презентація', 'Координати'];
+const CFG_SRC = require('fs').readFileSync(path.join(__dirname, '..', 'src', 'Config.gs'), 'utf8');
+const cfgCtx = {}; require('vm').createContext(cfgCtx);
+require('vm').runInContext(CFG_SRC.replace(/function cfg_[\s\S]*$/, '') + '\nthis.__cfg = CFG;', cfgCtx);
+const COLS = cfgCtx.__cfg.COLS;
+const expect = { ts: 0, date: 1, author: 2, region: 3, city: 4, address: 5, deal: 6, area: 7, price: 8, ramps: 9, yard: 10,
+  comment: 13, objType: 14, reviewDate: 15, reviewer: 16, decision: 17, branch: 18, source: 19, mapLink: 21, video: 22 };
+Object.keys(expect).forEach((k) => {
+  const i = P.headerMatch(REAL, COLS[k].match);
+  eq(i, expect[k], k + ' → ' + (i >= 0 ? '«' + REAL[i] + '»' : 'не знайдено'));
+});
+eq(P.headerMatchAll(REAL, cfgCtx.__cfg.PHOTO_MATCH), [11, 12, 20], 'фото → ззовні, всередині, автодвір');
+ok(cfgCtx.__cfg.REJECTED_MATCH.test('Не підходить'), '«Не підходить» → відхилена, слайд не потрібен');
+ok(!cfgCtx.__cfg.REJECTED_MATCH.test('Депо/термінал'), '«Депо/термінал» → не відхилена');
+eq(P.defaultProposal('Не підходить'), 'Відкриття', 'пропозиція для відхиленої — порожня заготовка');
+eq(P.defaultProposal('Відділення, Депо/термінал'), 'Відкриття: Відділення, Депо/термінал', 'кілька значень — як є після двокрапки');
+
 console.log('Службове');
 eq(P.parseSlideUrl('https://docs.google.com/presentation/d/1abcDEF_-xyz/edit#slide=id.g2f1a2b3c4d_0_5'),
    { deckId: '1abcDEF_-xyz', slideId: 'g2f1a2b3c4d_0_5' }, 'дека і слайд із записаного посилання');

@@ -55,6 +55,9 @@ const RECS = {
     coords: { lat: 50.38357, lng: 30.43296, source: 'geocode', precision: 'area', note: 'знайдено приблизно — район або населений пункт', label: 'Кільцева дорога, Київ' },
     mapShots: [{ id: 'km', ok: true, name: 'slide-20260827-222034-20260910-1300.png', created: '10.09 13:00', thumb: thumb('карта', '#48c'), url: '#' }] }
 };
+RECS['20260909-090000'] = Object.assign({}, RECS['20260828-184042'], { row: 5, key: '20260909-090000', city: 'Одеса', address: 'вул. Академіка Сахарова 1',
+  objType: 'Не підходить', rejected: true, decision: 'мала площа', slideUrl: '', slideDeck: '', yard: 'так', video: 'https://example.com/360',
+  proposalDefault: 'Відкриття', photos: [photo('o1', 'фасад.jpg')], photoIds: ['o1'], mapShots: [] });
 const rowsList = () => Object.keys(RECS).map((k) => RECS[k]).sort((a, b) => b.key.localeCompare(a.key));
 
 /* Мок API живе на сторінці: усі виклики записуються у window.__calls. */
@@ -94,14 +97,21 @@ function build() {
   const pg = await br.newPage({ viewport: { width: 1300, height: 900 } });
   pg.on('dialog', (d) => d.accept(d.type() === 'prompt' ? 'Розгляд тест' : undefined));
   await pg.goto(url);
-  await pg.waitForFunction(() => window.__wiz && window.__wiz.state().rows === 3);
+  await pg.waitForFunction(() => window.__wiz && window.__wiz.state().rows === 4);
   const st = () => pg.evaluate(() => window.__wiz.state());
   const calls = () => pg.evaluate(() => window.__calls);
 
   console.log('Список');
-  ok((await pg.$$('.row')).length === 2, 'фільтр «лише без слайда» ховає заявку зі слайдом (2 з 3)');
+  ok((await pg.$$('.row')).length === 2, 'фільтр «лише без слайда» ховає заявку зі слайдом, «Не підходить» схована типово (2 з 4)');
   await pg.uncheck('#onlyNew');
-  ok((await pg.$$('.row')).length === 3, 'без фільтра — всі три');
+  ok((await pg.$$('.row')).length === 3, 'без фільтра слайдів — три, відхилена й далі схована');
+  await pg.check('#showRejected');
+  ok((await pg.$$('.row')).length === 4 && (await pg.$$('.row .badge.rej')).length === 1, '«показувати Не підходить» → четверта з червоною поміткою');
+  await pg.click('.row[data-key="20260909-090000"]');
+  await pg.waitForFunction(() => window.__wiz.state().key === '20260909-090000');
+  ok(/не підходить/.test(await pg.textContent('#hMeta')) && /автодвір: так/.test(await pg.textContent('#hMeta')), 'у шапці: помітка «не підходить», автодвір');
+  ok((await pg.$eval('#hMeta a', (a) => a.href)) === 'https://example.com/360', 'відео 360 — посилання');
+  await pg.uncheck('#showRejected');
   await pg.fill('#q', 'чернів');
   ok((await pg.$$('.row')).length === 1, 'пошук за містом');
   await pg.fill('#q', '');
@@ -184,7 +194,7 @@ function build() {
   console.log('Помилка сервера');
   await pg.evaluate(() => { __decks.unshift({ id: 'FAIL', name: 'зламана', url: '#', created: '', by: '', slides: 0 }); });
   await pg.click('#reload');
-  await pg.waitForFunction(() => window.__wiz.state().rows === 3);
+  await pg.waitForFunction(() => window.__wiz.state().rows === 4);
   await pg.click('.row[data-key="20260828-184042"]');
   await pg.waitForFunction(() => window.__wiz.state().key === '20260828-184042' && window.__wiz.state().decks === 3);
   await pg.selectOption('#deck', 'FAIL');

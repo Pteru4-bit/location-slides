@@ -135,6 +135,8 @@ function rowRecord_(values, rowNumber) {
     priceRaw: priceRaw,
     priceUah: parsePriceUah(priceRaw),
     ramps: normText(get('ramps')),
+    yard: normText(get('yard')),
+    video: normText(get('video')),
     comment: normText(get('comment')),
     objType: normText(get('objType')),
     reviewDate: fmtDate_(get('reviewDate')),
@@ -150,6 +152,7 @@ function rowRecord_(values, rowNumber) {
     slideDeck: normText(out('deck')),
     coordsSaved: normText(out('coords'))
   };
+  rec.rejected = CFG.REJECTED_MATCH.test(rec.objType);
   rec.proposalDefault = defaultProposal(rec.objType);
   return rec;
 }
