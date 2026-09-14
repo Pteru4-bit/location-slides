@@ -89,12 +89,15 @@ function staticMapBlob_(lat, lng, zoom, pts) {
     .setFormat(Maps.StaticMap.Format.PNG);
   var byCat = {};
   (pts || []).forEach(function (p) { (byCat[p.cat] = byCat[p.cat] || []).push(p); });
+  /* Підпис маркера в Apps Script обовʼязковий (порожній рядок → «Недійсний
+     аргумент: label»); на малих маркерах він не малюється, тож для точок
+     мережі це формальність, а на мітці локації — літера A. */
   Object.keys(byCat).forEach(function (cat) {
-    m.setMarkerStyle(Maps.StaticMap.MarkerSize.SMALL, CAT_COLOR[cat] || '0x555555', '');
+    m.setMarkerStyle(Maps.StaticMap.MarkerSize.SMALL, CAT_COLOR[cat] || '0x555555', 'A');
     byCat[cat].forEach(function (p) { m.addMarker(p.lat, p.lng); });
   });
   /* Локація — останньою, щоб її мітка була зверху. */
-  m.setMarkerStyle(Maps.StaticMap.MarkerSize.MID, LOCATION_COLOR, '');
+  m.setMarkerStyle(Maps.StaticMap.MarkerSize.MID, LOCATION_COLOR, 'A');
   m.addMarker(lat, lng);
   return m.getBlob().setName('map.png');
 }

@@ -11,13 +11,19 @@
 
 var PT = 72; /* пунктів у дюймі */
 
+/* Розкладка — за ручними зразками: верхній ряд із трьох великих клітинок
+   (два фото і карта останньою), під ним смуга мініатюр для решти фото
+   ліворуч і «Пропозиція» праворуч; якщо решти немає — «Пропозиція» внизу
+   по центру, як на слайдах із двома фото. Клітинки таблиці в Google Slides
+   мають вбудовані поля 0,1", яких API не міняє, тому шрифти таблиці менші
+   за PowerPoint-оригінал, щоб висота вийшла та сама (~0,8"). */
 var GEOM = {
   title:    [0.16, 0.10, 5.45, 0.71],
-  table:    { box: [4.19, 0.10, 8.25, 0.91], cols: [1.98, 1.78, 2.25, 2.25], rows: [0.44, 0.40] },
-  photos:   [0.05, 1.37, 8.74, 4.55],   /* область сітки мініатюр */
-  map:      [8.89, 1.37, 4.37, 3.64],   /* карта, як на зразках — праворуч угорі */
-  proposal: [0.16, 6.05, 8.60, 0.80],
-  mapNote:  [8.95, 5.10, 4.30, 0.90]    /* примітка під картою (координати, джерело) */
+  table:    { box: [4.19, 0.10, 8.25, 0.80], cols: [1.85, 1.55, 2.60, 2.25], rows: [0.30, 0.30] },
+  topRow:   { y: 1.37, h: 3.64, x: [0.05, 4.47, 8.89], w: 4.37 },
+  strip:    [0.05, 5.10, 8.74, 1.80],   /* решта фото мініатюрами */
+  proposalRight:  [8.95, 5.15, 4.30, 1.50],   /* коли є смуга мініатюр */
+  proposalCenter: [3.30, 5.85, 7.37, 0.80]    /* коли решти фото немає */
 };
 var STYLE = { font: 'Arial', titleColor: '#C00000', textColor: '#201E1D', headFill: '#B6B5B8', black: '#000000', muted: '#6B7A88' };
 var TABLE_HEAD = ['Адреса', 'Площа м2', 'Вартість загальна в грн', 'Вартість м2'];
@@ -68,7 +74,7 @@ function addTable_(slide, k, cells) {
       var txt = r === 0 ? TABLE_HEAD[c] : String(cells[c] == null ? '' : cells[c]);
       cell.getText().setText(txt);
       var st = cell.getText().getTextStyle();
-      st.setFontFamily(STYLE.font).setForegroundColor(STYLE.black).setBold(r === 0).setFontSize(r === 0 ? 16 : (txt.length > 24 ? 9 : 12));
+      st.setFontFamily(STYLE.font).setForegroundColor(STYLE.black).setBold(r === 0).setFontSize(r === 0 ? 12 : (txt.length > 24 ? 8 : 11));
       cell.getText().getParagraphStyle().setParagraphAlignment(SlidesApp.ParagraphAlignment.CENTER);
       cell.setContentAlignment(SlidesApp.ContentAlignment.MIDDLE);
       if (r === 0) cell.getFill().setSolidFill(STYLE.headFill);
@@ -77,13 +83,16 @@ function addTable_(slide, k, cells) {
   return table.getObjectId();
 }
 
-/* Картинка цілком у прямокутник (дюйми), по центру, без обрізання. */
-function placeImage_(slide, blob, x, y, w, h, k) {
+/* Вставка в натуральному розмірі — щоб знати пропорції до розкладки. */
+function insertNatural_(slide, blob) {
   var img = slide.insertImage(blob);
   var iw = img.getWidth(), ih = img.getHeight();
-  var f = fitInto(iw > 0 && ih > 0 ? iw / ih : 4 / 3, x * PT * k, y * PT * k, w * PT * k, h * PT * k);
-  img.setLeft(f.left).setTop(f.top).setWidth(f.width).setHeight(f.height);
-  return img;
+  return { img: img, ratio: (iw > 0 && ih > 0) ? iw / ih : 4 / 3 };
+}
+/* Картинка цілком у прямокутник (дюйми), по центру, без обрізання. */
+function placeInto_(it, x, y, w, h, k) {
+  var f = fitInto(it.ratio, x * PT * k, y * PT * k, w * PT * k, h * PT * k);
+  it.img.setLeft(f.left).setTop(f.top).setWidth(f.width).setHeight(f.height);
 }
 
 /* Ширини колонок, висоти рядків і рамки таблиці одним запитом Slides API. */
@@ -166,31 +175,31 @@ function buildSlide_(payload, email) {
     addTitle_(slide, k, rec.city);
     tableId = addTable_(slide, k, cells);
 
-    if (images.length) {
-      var A = GEOM.photos;
-      var grid = gridFor(images.length, A[2], A[3]);
-      images.forEach(function (im, j) {
-        var c = gridCell(grid, j, A[0], A[1]);
-        placeImage_(slide, im.blob, c.x, c.y, c.w, c.h, k);
-      });
-    }
+    /* Верхній ряд: до трьох великих клітинок, карта — остання (як на зразках).
+       Без карти всі три клітинки — фото. Решта фото — смугою мініатюр нижче. */
+    var top = GEOM.topRow;
+    var topPhotos = map.blob ? 2 : 3;
+    var items = images.map(function (im) { return insertNatural_(slide, im.blob); });
+    var head = items.slice(0, topPhotos), rest = items.slice(topPhotos);
+    head.forEach(function (it, j) { placeInto_(it, top.x[j], top.y, top.w, top.h, k); });
     if (map.blob) {
-      var M = GEOM.map;
-      placeImage_(slide, map.blob, M[0], M[1], M[2], M[3], k);
+      var mi = insertNatural_(slide, map.blob);
+      placeInto_(mi, top.x[head.length < topPhotos ? head.length : 2], top.y, top.w, top.h, k);
     }
-    var mapNote = [];
-    if (coords && coords.lat != null) mapNote.push(coords.lat.toFixed(5) + ', ' + coords.lng.toFixed(5) +
-      (coords.source === 'geocode' ? ' (геокодер' + (coords.note ? ', ' + coords.note : '') + ')' : ''));
-    if (map.kind === 'none') mapNote.push('карти немає: ' + map.note);
-    if (mapNote.length) textBox_(slide, GEOM.mapNote, k, mapNote.join('\n'), 9, false, STYLE.muted);
-
-    textBox_(slide, GEOM.proposal, k, 'Пропозиція: ' + rec.proposalDefault, 22, true, STYLE.textColor);
-
-    slide.getNotesPage().getSpeakerNotesShape().getText().setText(JSON.stringify({
-      key: rec.key, row: rec.row, by: email, at: new Date().toISOString(),
-      photos: images.map(function (im) { return im.name + ' (' + im.mode + ')'; }),
-      skipped: skipped, map: map.kind, mapNote: map.note, coords: coords, price: priceMode
-    }));
+    if (rest.length) {
+      var S = GEOM.strip;
+      var grid = bestGrid(rest.map(function (it) { return it.ratio; }), S[2], S[3]);
+      rest.forEach(function (it, j) {
+        var c = gridCell(grid, j, S[0], S[1]);
+        placeInto_(it, c.x, c.y, c.w, c.h, k);
+      });
+      textBox_(slide, GEOM.proposalRight, k, 'Пропозиція: ' + rec.proposalDefault, 20, true, STYLE.textColor);
+    } else {
+      textBox_(slide, GEOM.proposalCenter, k, 'Пропозиція: ' + rec.proposalDefault, 24, true, STYLE.textColor,
+               SlidesApp.ParagraphAlignment.CENTER);
+    }
+    /* Нотатки слайда лишаються порожніми: презентація йде керівництву, а
+       службові подробиці (фото, карта, координати) — у журналі й у «Лог». */
   } catch (eBuild) {
     try { slide.remove(); pres.saveAndClose(); } catch (e0) {}
     throw eBuild;
@@ -203,6 +212,10 @@ function buildSlide_(payload, email) {
   if (br && br.note) notes.push(br.note);
   if (skipped.length) notes.push('пропущено: ' + skipped.join('; '));
   notes.push('карта: ' + map.note);
+  if (coords && coords.lat != null) notes.push('координати: ' + coords.lat.toFixed(5) + ', ' + coords.lng.toFixed(5) +
+    ' (' + ({ saved: 'з таблиці', link: 'з посилання Google Maps', geocode: 'геокодер' }[coords.source] || coords.source) +
+    (coords.note ? ', ' + coords.note : '') + ')');
+  else notes.push('координат немає: ' + ((coords && coords.note) || ''));
 
   var slideUrl = 'https://docs.google.com/presentation/d/' + deckId + '/edit#slide=id.' + slideId;
   writeSlideBack_(rec.row, slideUrl, deck.name, email);

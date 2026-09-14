@@ -201,21 +201,35 @@ function keyFromTimestampString(s) {
 
 /* ── Пакетний режим: сітка мініатюр і вікно карти ──────────────────── */
 
-/* Сітка для n фото в області W×H (дюйми): скільки колонок дає НАЙБІЛЬШІ
-   мініатюри. Фото вважаємо 4:3 і вставляємо цілком (без обрізання), тому
-   оцінка клітинки — менше з її ширини і висоти×4/3. */
-function gridFor(n, W, H, gap) {
+/* Сітка для фото з пропорціями ratios (ширина/висота) в області W×H
+   (дюйми): скільки колонок дає НАЙБІЛЬШУ сумарну площу фото, якщо кожне
+   вписати в клітинку цілком, без обрізання. Вертикальні фото тягнуть до
+   більшої кількості колонок, горизонтальні — до меншої. */
+function bestGrid(ratios, W, H, gap) {
   gap = (gap == null) ? 0.08 : gap;
-  n = Number(n) || 0;
+  var n = (ratios || []).length;
   if (n < 1) return null;
   var best = null;
-  for (var cols = 1; cols <= Math.min(n, 6); cols++) {
+  for (var cols = 1; cols <= Math.min(n, 8); cols++) {
     var rows = Math.ceil(n / cols);
     var cw = (W - gap * (cols - 1)) / cols, ch = (H - gap * (rows - 1)) / rows;
-    var score = Math.min(cw, ch * 4 / 3);
-    if (!best || score > best.score + 1e-9) best = { cols: cols, rows: rows, cellW: cw, cellH: ch, gap: gap, score: score };
+    if (cw <= 0 || ch <= 0) continue;
+    var area = 0;
+    for (var i = 0; i < n; i++) {
+      var f = fitInto(ratios[i], 0, 0, cw, ch);
+      area += f.width * f.height;
+    }
+    if (!best || area > best.score + 1e-9) best = { cols: cols, rows: rows, cellW: cw, cellH: ch, gap: gap, score: area };
   }
   return best;
+}
+
+/* Те саме для n фото, коли пропорції невідомі (вважаємо 4:3). */
+function gridFor(n, W, H, gap) {
+  n = Number(n) || 0;
+  var ratios = [];
+  for (var i = 0; i < n; i++) ratios.push(4 / 3);
+  return bestGrid(ratios, W, H, gap);
 }
 
 /* Клітинка №i сітки (зліва направо, згори вниз) у координатах області. */
@@ -268,5 +282,5 @@ if (typeof module !== 'undefined' && module.exports) {
     layoutFor: layoutFor, MAX_IMAGES: MAX_IMAGES, defaultProposal: defaultProposal,
     headerMatch: headerMatch, headerMatchAll: headerMatchAll, letterIndex: letterIndex,
     parseSlideUrl: parseSlideUrl, keyFromTimestampString: keyFromTimestampString, inUkraine: inUkraine,
-    gridFor: gridFor, gridCell: gridCell, fitInto: fitInto, mercatorBbox: mercatorBbox, zoomForType: zoomForType };
+    gridFor: gridFor, bestGrid: bestGrid, gridCell: gridCell, fitInto: fitInto, mercatorBbox: mercatorBbox, zoomForType: zoomForType };
 }
