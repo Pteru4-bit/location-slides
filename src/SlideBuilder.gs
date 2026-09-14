@@ -103,13 +103,15 @@ function placeInto_(it, x, y, w, h, k) {
 function mapLabel_(slide, rect, k, line1, line2) {
   var pad = 0.12 * PT * k;
   var w = Math.min(2.7 * PT * k, rect.width - 2 * pad), h = 0.62 * PT * k;
-  var shape = slide.insertShape(SlidesApp.ShapeType.ROUND_RECTANGLE, rect.left + pad, rect.top + pad, w, h);
-  shape.getFill().setSolidFill('#FFFFFF');
-  try { shape.getBorder().setWeight(0.75); shape.getBorder().getLineFill().setSolidFill('#9AA5B1'); } catch (e) {}
+  /* Текстове поле, а не insertShape: фігура без текстового блоку в SlidesApp
+     падає на getText() («The object has no text»). Заливка й рамка у
+     текстового поля є. */
+  var shape = slide.insertTextBox(line1 + '\n' + line2, rect.left + pad, rect.top + pad, w, h);
   var tr = shape.getText();
-  tr.setText(line1 + '\n' + line2);
   tr.getTextStyle().setFontFamily(STYLE.font).setFontSize(7.5).setForegroundColor('#22303C').setBold(false);
   try { tr.getRange(0, line1.length).getTextStyle().setBold(true); } catch (e2) {}
+  try { shape.getFill().setSolidFill('#FFFFFF'); } catch (e3) {}
+  try { shape.getBorder().setWeight(0.75); shape.getBorder().getLineFill().setSolidFill('#9AA5B1'); } catch (e4) {}
   shape.setContentAlignment(SlidesApp.ContentAlignment.MIDDLE);
   return shape;
 }
@@ -208,7 +210,8 @@ function buildSlide_(payload, email) {
       if (map.kind === 'static' && coords && coords.lat != null) {
         var line1 = (coords.source === 'geocode' && coords.label) ? coords.label
                   : [rec.address, rec.city, rec.region].filter(Boolean).join(', ');
-        mapLabel_(slide, mrect, k, line1, coords.lat.toFixed(5) + ', ' + coords.lng.toFixed(5));
+        try { mapLabel_(slide, mrect, k, line1, coords.lat.toFixed(5) + ', ' + coords.lng.toFixed(5)); }
+        catch (eLbl) { notes.push('підпис на карті не додано: ' + ((eLbl && eLbl.message) || eLbl)); }
       }
     }
     if (rest.length) {
