@@ -87,29 +87,31 @@ function build() {
   const calls = () => pg.evaluate(() => window.__calls);
 
   console.log('Список і вибір');
-  ok((await st()).visible === 2, 'типово: без слайда і без «Не підходить» — 2 з 4');
-  await pg.uncheck('#onlyNew');
-  ok((await st()).visible === 3, 'без фільтра слайдів — 3, відхилена схована');
-  await pg.check('#showRejected');
-  ok((await st()).visible === 4 && (await pg.$$('.row .badge.rej')).length === 1, '«показувати Не підходить» → 4, одна з червоною поміткою');
-  await pg.uncheck('#showRejected'); await pg.check('#onlyNew');
+  ok((await st()).visible === 4, 'показуються всі заявки: зі слайдом і «Не підходить» теж (4 з 4)');
+  ok((await pg.$$('.row .badge.no')).length === 3 && (await pg.$$('.row .badge a')).length === 1, 'помітки: 3 «без слайда», 1 «є слайд»');
+  ok((await pg.$$('.row .badge.rej')).length === 0, 'червоної помітки «не підходить» немає');
+  await pg.fill('#q', 'чернів');
+  ok((await st()).visible === 1, 'пошук звужує список');
+  await pg.fill('#q', '');
   ok((await pg.$eval('#build', (b) => b.disabled)), 'без вибору кнопка неактивна');
   await pg.click('#selVisible');
   let s = await st();
-  ok(s.sel.length === 2 && /\(2\)/.test(s.build), '«Обрати всі видимі» → 2, кнопка «Створити слайди (2)»', s.build);
+  ok(s.sel.length === 4 && /\(4\)/.test(s.build), '«Обрати всі видимі» → 4, кнопка «Створити слайди (4)»', s.build);
+  await pg.click('#selNone');
+  ok((await st()).sel.length === 0, '«Зняти все» → 0');
   await pg.click('.row[data-key="20260826-181927"]');
-  ok((await st()).sel.length === 1, 'клік по заявці знімає вибір');
+  await pg.click('.row[data-key="20260827-222034"]');
+  ok((await st()).sel.length === 2, 'клік по заявці відмічає (2)');
   await pg.click('.row[data-key="20260826-181927"]');
-  ok((await st()).sel.length === 2, '…і повертає');
+  ok((await st()).sel.length === 1, '…і знімає');
+  await pg.click('.row[data-key="20260826-181927"]');
   const kyivRow = await pg.textContent('.row[data-key="20260827-222034"]');
   ok(/фото: 15/.test(kyivRow) && /ціна текстом/.test(kyivRow), 'у рядку видно кількість фото і що ціна текстом');
-  await pg.uncheck('#onlyNew');
   const mapHref = await pg.$eval('.row[data-key="20260828-184042"] a[data-nosel]', (a) => a.href);
   ok(/slide=20260828-184042/.test(mapHref) && /ll=48\.2664111,25\.9582113/.test(mapHref), '«карта ↗» несе ключ і координати з посилання Google Maps', mapHref);
   await pg.$eval('.row[data-key="20260828-184042"] a[data-nosel]', (a) => { a.removeAttribute('target'); a.href = 'javascript:void(0)'; });
   await pg.click('.row[data-key="20260828-184042"] a[data-nosel]');
   ok((await st()).sel.length === 2, 'клік по «карта ↗» не міняє вибір');
-  await pg.check('#onlyNew');
 
   console.log('Презентація і пакет');
   await pg.click('#newDeck');
@@ -124,16 +126,14 @@ function build() {
   ok(/фото: 15/.test(log) && /точок поруч 17/.test(log) && /ціна: текст із форми/.test(log), 'у журналі: фото, карта, ціна', log.slice(0, 200));
   ok(/карта: знімок із карти мережі/.test(log), 'для Чернігова — знімок 💾 замість статичної');
   ok(/Готово:.*2 слайдів/.test(log), 'підсумок: 2 слайди');
-  await pg.uncheck('#onlyNew');
   ok((await pg.$$('.row .badge a')).length === 3, 'у списку зʼявились посилання «є слайд» (2 нові + 1 стара)');
-  await pg.check('#onlyNew');
   ok((await st()).sel.length === 0, 'вибір знято після успіху');
   ok(!(await st()).running && !(await pg.$eval('#stop', (e) => e.style.display !== 'none')), 'прогін завершено, «Зупинити» сховано');
 
   console.log('Помилка однієї заявки і повтор у тій самій презентації');
   await pg.evaluate(() => { window.__failKyiv = true; });
-  await pg.uncheck('#onlyNew');
   await pg.click('#selVisible');
+  await pg.click('.row[data-key="20260909-090000"]');   /* відхилену не чіпаємо */
   ok((await st()).sel.length === 3, 'три відмічені, одна з них уже має слайд у DECK1');
   await pg.selectOption('#deck', 'DECK1');
   await pg.click('#build');   /* confirm про заміну приймається автоматично */

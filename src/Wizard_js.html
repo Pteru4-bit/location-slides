@@ -55,11 +55,11 @@
       renderRows(); updateSel();
     }).catch(function (e) { $('rows').innerHTML = '<div class="pad" style="color:#b71c1c">' + esc(e.message) + '</div>'; });
   }
+  /* Показуються всі заявки, зокрема зі слайдом і «Не підходить»: користувач
+     розбирається сам за помітками; звужує список лише пошук. */
   function visibleRows() {
-    var q = $('q').value.trim().toLowerCase(), onlyNew = $('onlyNew').checked, showRej = $('showRejected').checked;
+    var q = $('q').value.trim().toLowerCase();
     return ROWS.filter(function (r) {
-      if (onlyNew && r.slideUrl) return false;
-      if (!showRej && r.rejected) return false;
       if (!q) return true;
       return [r.city, r.address, r.author, r.objType, r.branch, r.region].join(' ').toLowerCase().indexOf(q) !== -1;
     });
@@ -70,8 +70,7 @@
       return '<div class="row' + (SEL[r.key] ? ' on' : '') + (r.slideUrl ? ' done' : '') + '" data-key="' + esc(r.key) + '">' +
         '<input type="checkbox" ' + (SEL[r.key] ? 'checked' : '') + ' aria-label="відмітити">' +
         '<div class="body"><div class="t">' + esc(r.city) + ', ' + esc(r.address) +
-        (r.slideUrl ? '<span class="badge"><a href="' + esc(r.slideUrl) + '" target="_blank" rel="noopener">є слайд ↗</a></span>' : '<span class="badge no">без слайда</span>') +
-        (r.rejected ? '<span class="badge rej">не підходить</span>' : '') + '</div>' +
+        (r.slideUrl ? '<span class="badge"><a href="' + esc(r.slideUrl) + '" target="_blank" rel="noopener">є слайд ↗</a></span>' : '<span class="badge no">без слайда</span>') + '</div>' +
         '<div class="s">' + esc(r.objType || '—') + ' · ' + esc(r.deal || '') + ' · ' + esc(r.date || r.ts) + ' · ' + esc(r.author) +
         ' · фото: ' + (r.photoIds ? r.photoIds.length : 0) +
         (r.priceUah == null && r.priceRaw ? ' · ціна текстом: «' + esc(r.priceRaw.slice(0, 40)) + (r.priceRaw.length > 40 ? '…' : '') + '»' : '') +
@@ -81,8 +80,6 @@
     $('rows').innerHTML = html || '<div class="muted pad">Нічого не знайдено.</div>';
   }
   $('q').addEventListener('input', renderRows);
-  $('onlyNew').addEventListener('change', renderRows);
-  $('showRejected').addEventListener('change', renderRows);
   $('reload').addEventListener('click', loadRows);
   $('rows').addEventListener('click', function (e) {
     if (e.target.closest('a')) return;      /* посилання не міняють вибір */
