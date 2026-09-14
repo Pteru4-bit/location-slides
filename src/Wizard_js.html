@@ -23,6 +23,7 @@
   /* ── Стан ── */
   var ROWS = [], SEL = {}, DECKS = [], RUNNING = false, STOP = false;
   $('who').textContent = BOOT.email || '';
+  if ($('ver')) $('ver').textContent = BOOT.version ? 'версія ' + BOOT.version : '';
 
   function selectedRows() { return ROWS.filter(function (r) { return SEL[r.key]; }); }
   function updateSel() {
