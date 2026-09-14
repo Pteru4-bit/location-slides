@@ -91,6 +91,13 @@ function columnReport_() {
     lines.push(k + ' → колонка ' + (c.idx[k] + 1) + ' (' + c.how[k] + ')');
   });
   lines.push('фото → ' + c.photos.map(function (i) { return i + 1; }).join(', ') + ' (' + c.how.photos + ')');
+  /* Звірка порядку з аркушем: перші три заявки списку з номерами рядків. */
+  try {
+    var top = readRecent_(3);
+    lines.push('Порядок списку: як в аркуші знизу вгору. Перші три: ' + top.map(function (r) {
+      return 'рядок ' + r.row + ' («' + r.ts + '», ' + r.city + ', ' + r.address + ')';
+    }).join(' · ') + '. Останній рядок аркуша: ' + responsesSheet_().getLastRow());
+  } catch (e) { lines.push('порядок списку: не вдалося прочитати (' + e.message + ')'); }
   Object.keys(c.out).forEach(function (k) { lines.push('службова «' + CFG.OUT[k] + '» → колонка ' + (c.out[k] + 1)); });
   return lines;
 }
@@ -157,10 +164,11 @@ function rowRecord_(values, rowNumber) {
   return rec;
 }
 
-/* Усі заявки, найсвіжіші першими — за «Позначкою часу», а не за положенням
-   рядка: форма дописує в кінець, але аркуш можуть відсортувати чи вставити
-   рядки вручну. Рядки без мітки часу — в кінці, за номером. limit > 0
-   обмежує список (CFG.ROWS_LIMIT = 0 — показувати все). */
+/* Усі заявки в порядку аркуша знизу вгору: останній рядок аркуша — перший
+   у списку. Саме так люди бачать «свіжі» заявки в таблиці (форма дописує
+   в кінець), і список збігається з аркушем один в один, навіть коли рядки
+   переставляли чи копіювали вручну. limit > 0 обмежує список
+   (CFG.ROWS_LIMIT = 0 — показувати все). */
 var READ_MAX_ROWS = 5000;
 function readRecent_(limit) {
   var sh = responsesSheet_();
@@ -175,9 +183,9 @@ function readRecent_(limit) {
   for (var i = 0; i < vals.length; i++) {
     var v = vals[i];
     if (!v.some(function (x) { return x !== '' && x != null; })) continue;   /* порожні хвости */
-    recs.push({ row: first + i, t: timestampMs(v[c.idx.ts]), v: v });
+    recs.push({ row: first + i, v: v });
   }
-  recs.sort(function (a, b) { return (b.t - a.t) || (b.row - a.row); });
+  recs.reverse();
   if (limit > 0) recs = recs.slice(0, limit);
   return recs.map(function (r) { return rowRecord_(r.v, r.row); });
 }
