@@ -89,10 +89,29 @@ function insertNatural_(slide, blob) {
   var iw = img.getWidth(), ih = img.getHeight();
   return { img: img, ratio: (iw > 0 && ih > 0) ? iw / ih : 4 / 3 };
 }
-/* Картинка цілком у прямокутник (дюйми), по центру, без обрізання. */
+/* Картинка цілком у прямокутник (дюйми), по центру, без обрізання.
+   Повертає, де саме вона стала (пункти). */
 function placeInto_(it, x, y, w, h, k) {
   var f = fitInto(it.ratio, x * PT * k, y * PT * k, w * PT * k, h * PT * k);
   it.img.setLeft(f.left).setTop(f.top).setWidth(f.width).setHeight(f.height);
+  return f;
+}
+
+/* Підпис на карті, як попап на ручних зразках: біла плашка в лівому
+   верхньому куті з адресою (жирним) і координатами. Статична карта Google
+   тексту не малює, тому плашка — окрема фігура поверх картинки. */
+function mapLabel_(slide, rect, k, line1, line2) {
+  var pad = 0.12 * PT * k;
+  var w = Math.min(2.7 * PT * k, rect.width - 2 * pad), h = 0.62 * PT * k;
+  var shape = slide.insertShape(SlidesApp.ShapeType.ROUND_RECTANGLE, rect.left + pad, rect.top + pad, w, h);
+  shape.getFill().setSolidFill('#FFFFFF');
+  try { shape.getBorder().setWeight(0.75); shape.getBorder().getLineFill().setSolidFill('#9AA5B1'); } catch (e) {}
+  var tr = shape.getText();
+  tr.setText(line1 + '\n' + line2);
+  tr.getTextStyle().setFontFamily(STYLE.font).setFontSize(7.5).setForegroundColor('#22303C').setBold(false);
+  try { tr.getRange(0, line1.length).getTextStyle().setBold(true); } catch (e2) {}
+  shape.setContentAlignment(SlidesApp.ContentAlignment.MIDDLE);
+  return shape;
 }
 
 /* Ширини колонок, висоти рядків і рамки таблиці одним запитом Slides API. */
@@ -184,7 +203,13 @@ function buildSlide_(payload, email) {
     head.forEach(function (it, j) { placeInto_(it, top.x[j], top.y, top.w, top.h, k); });
     if (map.blob) {
       var mi = insertNatural_(slide, map.blob);
-      placeInto_(mi, top.x[head.length < topPhotos ? head.length : 2], top.y, top.w, top.h, k);
+      var mrect = placeInto_(mi, top.x[head.length < topPhotos ? head.length : 2], top.y, top.w, top.h, k);
+      /* Знімок 💾 уже містить попап карти мережі; статичній карті підпис додаємо самі. */
+      if (map.kind === 'static' && coords && coords.lat != null) {
+        var line1 = (coords.source === 'geocode' && coords.label) ? coords.label
+                  : [rec.address, rec.city, rec.region].filter(Boolean).join(', ');
+        mapLabel_(slide, mrect, k, line1, coords.lat.toFixed(5) + ', ' + coords.lng.toFixed(5));
+      }
     }
     if (rest.length) {
       var S = GEOM.strip;

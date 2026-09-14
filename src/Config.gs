@@ -49,9 +49,13 @@ var CFG = {
   MAP: {
     width: 640, height: 480,  /* стеля статичної карти в Apps Script */
     maxPoints: 60,            /* найближчих точок мережі в кадрі (ліміт довжини URL) */
+    /* Які категорії точок показувати (як на ручних зразках — лише вантажні
+       відділення, фіолетові). Порожній список = усі. Ключі: post, cargo,
+       newfmt, mobile, pickup, boxOpen, boxHome, infra (як CAT у карті). */
+    categories: ['cargo'],
     zoomDefault: 14,
     zoomByType: [
-      { match: /відділен|пвз|пункт|поштомат|дроп/i, zoom: 15 },
+      { match: /відділен|пвз|пункт|поштомат|дроп/i, zoom: 14 },
       { match: /депо|термінал/i, zoom: 13 }
     ]
   },

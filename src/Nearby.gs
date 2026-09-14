@@ -67,13 +67,16 @@ function catOf_(net, t, si) {
 /* Найближчі точки мережі, які потрапляють у кадр. */
 function pointsNear_(net, lat, lng, zoom) {
   var bb = mercatorBbox(lat, lng, zoom, CFG.MAP.width, CFG.MAP.height);
+  var want = CFG.MAP.categories || [];
   var out = [];
   var pts = net.points;
   for (var i = 0; i < pts.length; i++) {
     var p = pts[i];
     if (p[0] < bb.latMin || p[0] > bb.latMax || p[1] < bb.lngMin || p[1] > bb.lngMax) continue;
+    var cat = catOf_(net, p[2], p[3]);
+    if (want.length && want.indexOf(cat) === -1) continue;
     var dx = (p[1] - lng) * Math.cos(lat * Math.PI / 180), dy = p[0] - lat;
-    out.push({ lat: p[0], lng: p[1], cat: catOf_(net, p[2], p[3]), d: dx * dx + dy * dy });
+    out.push({ lat: p[0], lng: p[1], cat: cat, d: dx * dx + dy * dy });
   }
   out.sort(function (a, b) { return a.d - b.d; });
   return out.slice(0, CFG.MAP.maxPoints);
@@ -92,8 +95,9 @@ function staticMapBlob_(lat, lng, zoom, pts) {
   /* Підпис маркера в Apps Script обовʼязковий (порожній рядок → «Недійсний
      аргумент: label»); на малих маркерах він не малюється, тож для точок
      мережі це формальність, а на мітці локації — літера A. */
+  /* Точки мережі — маленькими кружками (TINY), як на карті мережі. */
   Object.keys(byCat).forEach(function (cat) {
-    m.setMarkerStyle(Maps.StaticMap.MarkerSize.SMALL, CAT_COLOR[cat] || '0x555555', 'A');
+    m.setMarkerStyle(Maps.StaticMap.MarkerSize.TINY, CAT_COLOR[cat] || '0x555555', 'A');
     byCat[cat].forEach(function (p) { m.addMarker(p.lat, p.lng); });
   });
   /* Локація — останньою, щоб її мітка була зверху. */
@@ -113,9 +117,10 @@ function mapForLocation_(rec, coords) {
   var zoom = zoomForType(rec.objType, CFG.MAP.zoomByType, CFG.MAP.zoomDefault);
   var net = loadNetwork_();
   var pts = net ? pointsNear_(net, coords.lat, coords.lng, zoom) : [];
+  var what = (CFG.MAP.categories || []).length ? 'точок (' + CFG.MAP.categories.join(', ') + ')' : 'точок мережі';
   try {
     return { blob: staticMapBlob_(coords.lat, coords.lng, zoom, pts), kind: 'static', points: pts.length,
-             note: 'статична карта, z' + zoom + (net ? ', точок мережі в кадрі: ' + pts.length : ', без точок мережі: витяг карти не знайдено') };
+             note: 'статична карта, z' + zoom + (net ? ', ' + what + ' у кадрі: ' + pts.length : ', без точок мережі: витяг карти не знайдено') };
   } catch (e1) {
     /* Найчастіша причина — задовгий URL або квота. Пробуємо без точок. */
     try {
