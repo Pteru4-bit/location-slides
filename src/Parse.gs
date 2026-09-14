@@ -274,6 +274,19 @@ function zoomForType(objType, rules, fallback) {
   return fallback;
 }
 
+/* Мітка часу як число (мс) для сортування: Date як є, рядок
+   «26.08.2026 18:19:27» або «2026-08-26 18:19» розбирається, інакше 0
+   (такі рядки йдуть у кінець). */
+function timestampMs(v) {
+  if (v instanceof Date) return isNaN(v) ? 0 : v.getTime();
+  var t = normText(v);
+  var m = t.match(/^(\d{1,2})\.(\d{1,2})\.(\d{4})(?:\D+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (m) return Date.UTC(+m[3], +m[2] - 1, +m[1], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+  m = t.match(/^(\d{4})-(\d{2})-(\d{2})(?:\D+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/);
+  if (m) return Date.UTC(+m[1], +m[2] - 1, +m[3], +(m[4] || 0), +(m[5] || 0), +(m[6] || 0));
+  return 0;
+}
+
 /* Для node-тестів: Apps Script цього блоку не бачить (module там немає). */
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { normText: normText, parseNumberLoose: parseNumberLoose, parseArea: parseArea,
@@ -282,5 +295,6 @@ if (typeof module !== 'undefined' && module.exports) {
     layoutFor: layoutFor, MAX_IMAGES: MAX_IMAGES, defaultProposal: defaultProposal,
     headerMatch: headerMatch, headerMatchAll: headerMatchAll, letterIndex: letterIndex,
     parseSlideUrl: parseSlideUrl, keyFromTimestampString: keyFromTimestampString, inUkraine: inUkraine,
-    gridFor: gridFor, bestGrid: bestGrid, gridCell: gridCell, fitInto: fitInto, mercatorBbox: mercatorBbox, zoomForType: zoomForType };
+    gridFor: gridFor, bestGrid: bestGrid, gridCell: gridCell, fitInto: fitInto, mercatorBbox: mercatorBbox, zoomForType: zoomForType,
+    timestampMs: timestampMs };
 }
