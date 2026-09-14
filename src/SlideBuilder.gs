@@ -51,7 +51,9 @@ function box_(g, k) { return { left: g[0] * PT * k, top: g[1] * PT * k, width: g
 
 function textBox_(slide, geom, k, text, size, bold, color, align) {
   var b = box_(geom, k);
-  var shape = slide.insertTextBox(text, b.left, b.top, b.width, b.height);
+  /* Порожній текст — це фігура без текстового блоку, і будь-яке
+     форматування далі падає з «The object has no text». */
+  var shape = slide.insertTextBox(String(text || '') || ' ', b.left, b.top, b.width, b.height);
   var tr = shape.getText();
   tr.getTextStyle().setFontFamily(STYLE.font).setFontSize(size).setBold(!!bold).setForegroundColor(color || STYLE.textColor);
   if (align) tr.getParagraphStyle().setParagraphAlignment(align);
@@ -71,11 +73,17 @@ function addTable_(slide, k, cells) {
   for (var r = 0; r < 2; r++) {
     for (var c = 0; c < 4; c++) {
       var cell = table.getCell(r, c);
-      var txt = r === 0 ? TABLE_HEAD[c] : String(cells[c] == null ? '' : cells[c]);
+      var txt = r === 0 ? TABLE_HEAD[c] : normText(cells[c]);
+      /* Порожня клітинка (вартість за м², коли ціна текстом) — ставимо тире:
+         клітинка з порожнім текстом втрачає текстовий блок, і стилі далі
+         падають з «The object has no text». */
+      if (!txt) txt = '—';
       cell.getText().setText(txt);
-      var st = cell.getText().getTextStyle();
-      st.setFontFamily(STYLE.font).setForegroundColor(STYLE.black).setBold(r === 0).setFontSize(r === 0 ? 12 : (txt.length > 24 ? 8 : 11));
-      cell.getText().getParagraphStyle().setParagraphAlignment(SlidesApp.ParagraphAlignment.CENTER);
+      try {
+        var st = cell.getText().getTextStyle();
+        st.setFontFamily(STYLE.font).setForegroundColor(STYLE.black).setBold(r === 0).setFontSize(r === 0 ? 12 : (txt.length > 24 ? 8 : 11));
+        cell.getText().getParagraphStyle().setParagraphAlignment(SlidesApp.ParagraphAlignment.CENTER);
+      } catch (eSt) {}
       cell.setContentAlignment(SlidesApp.ContentAlignment.MIDDLE);
       if (r === 0) cell.getFill().setSolidFill(STYLE.headFill);
     }
@@ -191,10 +199,13 @@ function buildSlide_(payload, email) {
     }
   }
   var slide = blankSlide_(pres, index);
-  var tableId;
+  var tableId, stage = 'початок';
   try {
+    stage = 'заголовок';
     addTitle_(slide, k, rec.city);
+    stage = 'таблиця';
     tableId = addTable_(slide, k, cells);
+    stage = 'фото';
 
     /* Верхній ряд: до трьох великих клітинок, карта — остання (як на зразках).
        Без карти всі три клітинки — фото. Решта фото — смугою мініатюр нижче. */
@@ -204,6 +215,7 @@ function buildSlide_(payload, email) {
     var head = items.slice(0, topPhotos), rest = items.slice(topPhotos);
     head.forEach(function (it, j) { placeInto_(it, top.x[j], top.y, top.w, top.h, k); });
     if (map.blob) {
+      stage = 'карта';
       var mi = insertNatural_(slide, map.blob);
       var mrect = placeInto_(mi, top.x[head.length < topPhotos ? head.length : 2], top.y, top.w, top.h, k);
       /* Знімок 💾 уже містить попап карти мережі; статичній карті підпис додаємо самі. */
@@ -214,6 +226,7 @@ function buildSlide_(payload, email) {
         catch (eLbl) { notes.push('підпис на карті не додано: ' + ((eLbl && eLbl.message) || eLbl)); }
       }
     }
+    stage = 'мініатюри';
     if (rest.length) {
       var S = GEOM.strip;
       var grid = bestGrid(rest.map(function (it) { return it.ratio; }), S[2], S[3]);
@@ -221,8 +234,10 @@ function buildSlide_(payload, email) {
         var c = gridCell(grid, j, S[0], S[1]);
         placeInto_(it, c.x, c.y, c.w, c.h, k);
       });
+      stage = 'пропозиція';
       textBox_(slide, GEOM.proposalRight, k, 'Пропозиція: ' + rec.proposalDefault, 20, true, STYLE.textColor);
     } else {
+      stage = 'пропозиція';
       textBox_(slide, GEOM.proposalCenter, k, 'Пропозиція: ' + rec.proposalDefault, 24, true, STYLE.textColor,
                SlidesApp.ParagraphAlignment.CENTER);
     }
@@ -230,7 +245,7 @@ function buildSlide_(payload, email) {
        службові подробиці (фото, карта, координати) — у журналі й у «Лог». */
   } catch (eBuild) {
     try { slide.remove(); pres.saveAndClose(); } catch (e0) {}
-    throw eBuild;
+    throw new Error('етап «' + stage + '»: ' + ((eBuild && eBuild.message) || eBuild));
   }
   removePlaceholder_(pres);
   var slideId = slide.getObjectId();
