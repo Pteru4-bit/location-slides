@@ -1,9 +1,14 @@
 /***********************************************************************
- *  Code — точка входу веб-застосунку «Слайди локацій» і API для майстра.
+ *  Code — точка входу веб-застосунку «Слайди локацій» і API для клієнта.
+ *
+ *  Режим пакетний: людина відмічає заявки, обирає презентацію і натискає
+ *  «Створити слайди». Клієнт викликає apiBuildSlide по одній заявці
+ *  (кожен виклик — окреме виконання, тож ліміт 6 хвилин не заважає), а
+ *  правки роблять уже в Презентаціях руками.
  *
  *  Застосунок виконується від імені власника (як карта мережі), тому
- *  доступ до файлів форми, шаблону й презентацій потрібен лише йому. Користувачу
- *  досить посилання; коло користувачів звужує CFG.ALLOWED_EMAILS.
+ *  доступ до файлів форми, шаблону й презентацій потрібен лише йому. Коло
+ *  користувачів звужує CFG.ALLOWED_EMAILS.
  ***********************************************************************/
 
 function doGet(e) {
@@ -11,7 +16,7 @@ function doGet(e) {
   var param = (e && e.parameter) || {};
   if (!allowed_(email)) {
     return HtmlService.createHtmlOutput(
-      '<p style="font:15px Arial;padding:24px">Доступ до майстра слайдів не надано для <b>' + esc_(email || 'невідомого акаунта') +
+      '<p style="font:15px Arial;padding:24px">Доступ до слайдів локацій не надано для <b>' + esc_(email || 'невідомого акаунта') +
       '</b>. Зверніться до адміністратора.</p>').setTitle('Слайди локацій — доступ').setFaviconUrl(CFG.FAVICON_URL);
   }
   var t = HtmlService.createTemplateFromFile('Wizard');
@@ -19,9 +24,8 @@ function doGet(e) {
     email: email,
     mapUrl: cfg_('MAP_WEB_APP_URL'),
     key: String(param.key || ''),
-    row: Number(param.row) || 0,
     shotZoom: CFG.SHOT_ZOOM,
-    maxImages: MAX_IMAGES
+    photoMax: CFG.PHOTO_MAX
   });
   logEvent_(email, 'вхід', param.key ? 'key=' + param.key : '');
   return t.evaluate()
@@ -49,49 +53,11 @@ function requireAccess_() {
   return email;
 }
 
-/* ── API майстра (google.script.run) ── */
+/* ── API (google.script.run) ── */
 
 function apiListRows(limit) {
   requireAccess_();
   return { ok: true, rows: readRecent_(Number(limit) || CFG.ROWS_LIMIT), sheet: responsesSheet_().getName() };
-}
-
-function apiGetRow(key, hintRow) {
-  requireAccess_();
-  var rec = recordByKey_(String(key || ''), Number(hintRow) || 0);
-  rec.photos = photoEntries_(rec.photoIds);
-  rec.coords = resolveCoords_(rec);
-  var shots = [];
-  try { shots = listMapShots_(rec.key); } catch (e) { rec.shotsError = (e && e.message) || String(e); }
-  rec.mapShots = shots;
-  return { ok: true, rec: rec };
-}
-
-function apiListMapShots(key) {
-  requireAccess_();
-  return { ok: true, shots: listMapShots_(String(key || '')) };
-}
-
-function apiUploadMapShot(key, dataUrl) {
-  var email = requireAccess_();
-  return { ok: true, shot: uploadMapShot_(String(key || ''), dataUrl, email) };
-}
-
-function apiGeocode(query) {
-  requireAccess_();
-  var g = geocode_(query);
-  if (g.ok) g.note = GEO_PRECISION_NOTE[g.precision] || '';
-  return g;
-}
-
-function apiSaveCoords(key, hintRow, lat, lng) {
-  var email = requireAccess_();
-  var la = Number(lat), ln = Number(lng);
-  if (!isFinite(la) || !isFinite(ln) || !inUkraine(la, ln)) throw new Error('Координати поза межами України або не числа.');
-  var rec = recordByKey_(String(key || ''), Number(hintRow) || 0);
-  writeCoords_(rec.row, la, ln);
-  logEvent_(email, 'координати', rec.key + ' → ' + la + ', ' + ln);
-  return { ok: true, lat: la, lng: ln };
 }
 
 function apiListDecks() {
@@ -104,6 +70,7 @@ function apiCreateDeck(name) {
   return { ok: true, deck: createDeck_(name, email) };
 }
 
+/* Один слайд за заявкою: { key, row, deckId, replace }. */
 function apiBuildSlide(payload) {
   var email = requireAccess_();
   return buildSlide_(payload, email);
@@ -114,17 +81,29 @@ function apiColumnReport() {
   return { ok: true, lines: columnReport_() };
 }
 
-/* Перевірка з редактора: таблиця, колонки, папка карт, шаблон, презентації. */
+/* Перевірка з редактора: таблиця, колонки, папка карт, шаблон, витяг мережі. */
 function checkSetup() {
   var out = [];
   try { out.push('✅ Таблиця відповідей: ' + responsesSs_().getName() + ' / аркуш «' + responsesSheet_().getName() + '»'); }
   catch (e) { out.push('❌ ' + e.message); }
   try { columnReport_().forEach(function (l) { out.push('   ' + l); }); } catch (e1) { out.push('❌ колонки: ' + e1.message); }
-  try { out.push('✅ Папка карт: ' + shotsFolder_().getName()); } catch (e2) { out.push('❌ ' + e2.message); }
+  try { var fo = shotsFolder_(); out.push(fo ? '✅ Папка карт: ' + fo.getName() : '⚠️ MAP_SHOTS_FOLDER_ID порожній — знімки з карти мережі (💾) не підхоплюватимуться'); }
+  catch (e2) { out.push('❌ папка карт: ' + e2.message); }
   try { var t = cfg_('TEMPLATE_DECK_ID'); out.push(t ? '✅ Шаблон: ' + SlidesApp.openById(t).getName() : '❌ Не задано TEMPLATE_DECK_ID'); }
   catch (e3) { out.push('❌ шаблон: ' + e3.message); }
   try { out.push('✅ Презентацій у реєстрі: ' + listDecks_().length); } catch (e4) { out.push('❌ реєстр презентацій: ' + e4.message); }
-  out.push(cfg_('MAP_WEB_APP_URL') ? '✅ URL карти мережі задано' : '⚠️ MAP_WEB_APP_URL порожній — кнопки «Відкрити карту» не буде');
+  try { out.push(checkNetwork()); } catch (e5) { out.push('❌ витяг мережі: ' + e5.message); }
+  out.push(cfg_('MAP_WEB_APP_URL') ? '✅ URL карти мережі задано' : '⚠️ MAP_WEB_APP_URL порожній — посилань «карта ↗» не буде');
+  out.push('ℹ️ Фото на слайд: ' + (Number(CFG.IMAGE_MAX_PX) ? 'мініатюри до ' + CFG.IMAGE_MAX_PX + ' px' : 'оригінали без втрати якості'));
   out.forEach(function (l) { Logger.log(l); });
   return out;
+}
+
+/* Пробний слайд з редактора: перша заявка без слайда у першу презентацію. */
+function testBuildOnce() {
+  var rows = readRecent_(20).filter(function (r) { return !r.slideUrl && !r.rejected; });
+  var decks = listDecks_();
+  if (!rows.length || !decks.length) { Logger.log('Потрібна хоча б одна заявка без слайда і одна презентація.'); return; }
+  var res = buildSlide_({ key: rows[0].key, row: rows[0].row, deckId: decks[0].id, replace: true }, userEmail_());
+  Logger.log(JSON.stringify(res, null, 2));
 }

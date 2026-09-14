@@ -2,7 +2,7 @@
 (function () {
   'use strict';
 
-  var BOOT = window.__BOOT || { email: '', mapUrl: '', key: '', row: 0, shotZoom: 15, maxImages: 5 };
+  var BOOT = window.__BOOT || { email: '', mapUrl: '', key: '', shotZoom: 15, photoMax: 20 };
   var GAS = !!(window.google && window.google.script && window.google.script.run);
   function $(id) { return document.getElementById(id); }
   function esc(s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); }
@@ -20,54 +20,62 @@
     });
   }
 
-  /* ── Числа: як у Parse.gs, але для полів форми ── */
-  function num(s) {
-    var t = String(s == null ? '' : s).replace(/[   ]/g, ' ').trim();
-    var m = t.match(/(\d{1,3}(?: \d{3})+|\d+)(?:[.,](\d+))?/);
-    if (!m) return null;
-    var n = Number(m[1].replace(/ /g, '') + (m[2] ? '.' + m[2] : ''));
-    return isFinite(n) ? n : null;
-  }
-  function fmtInt(n) {
-    if (n == null || !isFinite(n)) return '';
-    var s = String(Math.round(Math.abs(n))), out = '';
-    while (s.length > 3) { out = ' ' + s.slice(-3) + out; s = s.slice(0, -3); }
-    return (n < 0 ? '-' : '') + s + out;
-  }
-  function layoutLabel(n) {
-    if (n < 1) return 'без картинок слайд не збирається';
-    if (n <= 3) return 'макет: один ряд (' + n + ' із 3)';
-    if (n <= BOOT.maxImages) return 'макет: два ряди (' + n + ' із ' + BOOT.maxImages + ')';
-    return 'забагато картинок';
-  }
-
   /* ── Стан ── */
-  var ROWS = [], REC = null, SEL = [], MAP_SEL = '', DECKS = [], BUSY = false;
-
+  var ROWS = [], SEL = {}, DECKS = [], RUNNING = false, STOP = false;
   $('who').textContent = BOOT.email || '';
+
+  function selectedRows() { return ROWS.filter(function (r) { return SEL[r.key]; }); }
+  function updateSel() {
+    var n = selectedRows().length;
+    $('selCount').textContent = n;
+    $('build').textContent = n ? 'Створити слайди (' + n + ')' : 'Створити слайди';
+    $('build').disabled = RUNNING || !n;
+  }
+
+  /* Посилання «карта ↗»: карта мережі на локації, якщо координати вже відомі
+     (збережені або з посилання Google Maps у заявці), інакше просто з ключем. */
+  function mapLink(r) {
+    if (!BOOT.mapUrl) return '';
+    var u = BOOT.mapUrl + (BOOT.mapUrl.indexOf('?') === -1 ? '?' : '&') + 'slide=' + encodeURIComponent(r.key);
+    var m = String(r.coordsSaved || '').match(/(-?\d{1,2}\.\d+)\s*,\s*(-?\d{1,3}\.\d+)/) ||
+            String(r.mapLink || '').match(/@(-?\d{1,2}\.\d+),(-?\d{1,3}\.\d+)/);
+    if (m) u += '&ll=' + m[1] + ',' + m[2] + '&z=' + BOOT.shotZoom;
+    var addr = String(r.address || '').replace(/[\s,;]+$/, '');
+    u += '&label=' + encodeURIComponent([addr, r.city].filter(Boolean).join(', '));
+    return u;
+  }
 
   /* ── Список заявок ── */
   function loadRows() {
     $('rows').innerHTML = '<div class="muted pad">Завантаження заявок…</div>';
     return api('apiListRows').then(function (res) {
       ROWS = res.rows || [];
-      renderRows();
+      Object.keys(SEL).forEach(function (k) { if (!ROWS.some(function (r) { return r.key === k; })) delete SEL[k]; });
+      renderRows(); updateSel();
     }).catch(function (e) { $('rows').innerHTML = '<div class="pad" style="color:#b71c1c">' + esc(e.message) + '</div>'; });
   }
-  function renderRows() {
+  function visibleRows() {
     var q = $('q').value.trim().toLowerCase(), onlyNew = $('onlyNew').checked, showRej = $('showRejected').checked;
-    var html = ROWS.filter(function (r) {
+    return ROWS.filter(function (r) {
       if (onlyNew && r.slideUrl) return false;
       if (!showRej && r.rejected) return false;
       if (!q) return true;
       return [r.city, r.address, r.author, r.objType, r.branch, r.region].join(' ').toLowerCase().indexOf(q) !== -1;
-    }).map(function (r) {
-      return '<div class="row' + (REC && REC.key === r.key ? ' on' : '') + '" data-key="' + esc(r.key) + '" data-row="' + r.row + '">' +
-        '<div class="t">' + esc(r.city) + ', ' + esc(r.address) +
-        (r.slideUrl ? '<span class="badge">є слайд</span>' : '<span class="badge no">без слайда</span>') +
+    });
+  }
+  function renderRows() {
+    var html = visibleRows().map(function (r) {
+      var ml = mapLink(r);
+      return '<div class="row' + (SEL[r.key] ? ' on' : '') + (r.slideUrl ? ' done' : '') + '" data-key="' + esc(r.key) + '">' +
+        '<input type="checkbox" ' + (SEL[r.key] ? 'checked' : '') + ' aria-label="відмітити">' +
+        '<div class="body"><div class="t">' + esc(r.city) + ', ' + esc(r.address) +
+        (r.slideUrl ? '<span class="badge"><a href="' + esc(r.slideUrl) + '" target="_blank" rel="noopener">є слайд ↗</a></span>' : '<span class="badge no">без слайда</span>') +
         (r.rejected ? '<span class="badge rej">не підходить</span>' : '') + '</div>' +
         '<div class="s">' + esc(r.objType || '—') + ' · ' + esc(r.deal || '') + ' · ' + esc(r.date || r.ts) + ' · ' + esc(r.author) +
-        (r.photoIds && r.photoIds.length ? ' · фото: ' + r.photoIds.length : ' · без фото') + '</div></div>';
+        ' · фото: ' + (r.photoIds ? r.photoIds.length : 0) +
+        (r.priceUah == null && r.priceRaw ? ' · ціна текстом: «' + esc(r.priceRaw.slice(0, 40)) + (r.priceRaw.length > 40 ? '…' : '') + '»' : '') +
+        (ml ? ' · <a href="' + esc(ml) + '" target="_blank" rel="noopener" data-nosel="1">карта ↗</a>' : '') +
+        '</div></div></div>';
     }).join('');
     $('rows').innerHTML = html || '<div class="muted pad">Нічого не знайдено.</div>';
   }
@@ -76,264 +84,38 @@
   $('showRejected').addEventListener('change', renderRows);
   $('reload').addEventListener('click', loadRows);
   $('rows').addEventListener('click', function (e) {
+    if (e.target.closest('a')) return;      /* посилання не міняють вибір */
     var el = e.target.closest('.row');
-    if (!el) return;
-    openRow(el.getAttribute('data-key'), +el.getAttribute('data-row'));
+    if (!el || RUNNING) return;
+    var key = el.getAttribute('data-key');
+    if (SEL[key]) delete SEL[key]; else SEL[key] = true;
+    el.classList.toggle('on', !!SEL[key]);
+    el.querySelector('input[type=checkbox]').checked = !!SEL[key];
+    updateSel();
   });
-
-  /* ── Майстер ── */
-  function openRow(key, row) {
-    $('empty').style.display = 'none';
-    $('form').style.display = '';
-    $('result').style.display = 'none';
-    $('buildMsg').textContent = 'Завантаження заявки…';
-    $('hCity').textContent = ''; $('hAddr').textContent = '';
-    REC = null; SEL = []; MAP_SEL = '';
-    api('apiGetRow', key, row).then(function (res) {
-      REC = res.rec;
-      fillForm();
-      renderRows();
-      $('buildMsg').textContent = '';
-    }).catch(function (e) {
-      $('buildMsg').textContent = '';
-      showResult(false, 'Не вдалося відкрити заявку: ' + e.message);
-    });
-  }
-
-  function fillForm() {
-    var r = REC;
-    $('hCity').textContent = r.city; $('hAddr').textContent = r.address;
-    /* Рядок під заголовком: усе з форми, крім того, що йде на слайд.
-       Текст екранується; посилання (оголошення, відео 360) — клікабельні. */
-    var parts = [];
-    var plain = function (t) { if (t) parts.push(esc(t)); };
-    var link = function (url, text, prefix) {
-      if (!url) return;
-      if (/^https?:\/\//i.test(url)) parts.push('<a href="' + esc(url) + '" target="_blank" rel="noopener">' + text + ' ↗</a>');
-      else plain(prefix + url);
-    };
-    plain(r.objType); plain(r.deal); plain(r.region);
-    plain('подано ' + r.ts + (r.author ? ' · ' + r.author : '')); plain(r.branch);
-    if (r.ramps) plain('рампи: ' + r.ramps);
-    if (r.yard) plain('автодвір: ' + r.yard);
-    link(r.comment, 'оголошення', 'коментар: ');
-    link(r.video, 'відео 360', 'відео: ');
-    if (r.decision) plain('причина відмови: ' + r.decision);
-    if (r.rejected) parts.unshift('<span class="badge rej">не підходить — слайд зазвичай не потрібен</span>');
-    $('hMeta').innerHTML = parts.join(' · ');
-    if (r.slideUrl) {
-      $('hSlide').style.display = '';
-      $('hSlide').innerHTML = 'Слайд уже є: <a href="' + esc(r.slideUrl) + '" target="_blank" rel="noopener">відкрити</a> · ' +
-        esc(r.slideDeck) + ' · ' + esc(r.slideUpdated) + (r.slideBy ? ' · ' + esc(r.slideBy) : '') + '. Повторне створення в тій самій презентації замінить його.';
-    } else $('hSlide').style.display = 'none';
-
-    $('fAddr').value = r.address;
-    $('fArea').value = r.area != null ? String(r.area) : '';
-    $('fAreaRaw').textContent = r.areaRaw ? 'у формі: ' + r.areaRaw : 'у формі порожньо';
-    $('fPrice').value = r.priceUah != null ? String(r.priceUah) : '';
-    $('fPriceRaw').textContent = r.priceRaw ? 'у формі: ' + r.priceRaw : 'у формі порожньо';
-    var ph = $('priceHint');
-    if (r.priceUah == null && r.priceRaw) {
-      ph.style.display = ''; ph.textContent = 'У формі вартість не в гривнях за весь обʼєкт («' + r.priceRaw + '»). Впишіть суму в гривнях самі.';
-    } else ph.style.display = 'none';
-    $('fProp').value = r.proposalDefault || '';
-    $('fNote').value = '';
-    updateM2();
-
-    /* Типово обрано всі фото, що відкрились, у порядку форми — найчастіший
-       випадок. Місце для карти лишається, якщо знімок уже є. */
-    var room = BOOT.maxImages - ((r.mapShots || []).some(function (s) { return s.ok; }) ? 1 : 0);
-    (r.photos || []).forEach(function (p) { if (p.ok && SEL.length < room) SEL.push(p.id); });
-    renderPhotos();
-    renderCoords(r.coords || {});
-    /* Найновіший знімок карти обирається сам — але лише при відкритті заявки:
-       «без карти» має лишатись «без карти» після будь-якого перемальовування. */
-    var shots = r.mapShots || [];
-    if (shots.length && shots[0].ok) MAP_SEL = shots[0].id;
-    renderShots(shots, r.shotsError);
-    updateLayoutNote();
-    loadDecks();
-    $('build').textContent = 'Створити слайд';
-  }
-
-  function updateM2() {
-    var a = num($('fArea').value), p = num($('fPrice').value);
-    $('fM2').value = (a > 0 && p > 0) ? fmtInt(Math.round(p / a)) : '';
-  }
-  $('fArea').addEventListener('input', updateM2);
-  $('fPrice').addEventListener('input', updateM2);
-
-  /* ── Фото ── */
-  function renderPhotos() {
-    var list = REC.photos || [];
-    if (!list.length) { $('photos').innerHTML = '<div class="th none">у заявці немає фото</div>'; updateCount(); return; }
-    $('photos').innerHTML = list.map(function (p) {
-      var i = SEL.indexOf(p.id);
-      return '<div class="th' + (i !== -1 ? ' on' : '') + (p.ok ? '' : ' err') + '" data-id="' + esc(p.id) + '" title="' + esc(p.name) + '">' +
-        (p.thumb ? '<img src="' + p.thumb + '" alt="">' : '') +
-        '<span class="n">' + (i + 1) + '</span>' +
-        '<span class="mv"><button data-mv="-1" title="раніше">◀</button><button data-mv="1" title="пізніше">▶</button></span>' +
-        '<span class="cap">' + esc(p.ok ? p.name : ('не відкрився: ' + (p.error || ''))) + '</span></div>';
-    }).join('');
-    updateCount();
-  }
-  function updateCount() {
-    var total = (REC.photos || []).length;
-    $('photoCount').textContent = total ? '(обрано ' + SEL.length + ' з ' + total + ')' : '';
-  }
-  function imagesCount() { return SEL.length + (MAP_SEL ? 1 : 0); }
-  function updateLayoutNote() {
-    var n = imagesCount();
-    var el = $('layoutNote');
-    el.textContent = layoutLabel(n) + (MAP_SEL ? ' · карта остання' : ' · без карти');
-    el.className = 'hint' + (n >= 1 && n <= BOOT.maxImages ? ' ok' : '');
-  }
-  $('photos').addEventListener('click', function (e) {
-    var mv = e.target.closest('[data-mv]');
-    var th = e.target.closest('.th');
-    if (!th || !th.getAttribute('data-id')) return;
-    var id = th.getAttribute('data-id');
-    var i = SEL.indexOf(id);
-    if (mv) {
-      e.stopPropagation();
-      if (i === -1) return;
-      var j = i + (+mv.getAttribute('data-mv'));
-      if (j < 0 || j >= SEL.length) return;
-      SEL[i] = SEL[j]; SEL[j] = id;
-    } else if (i !== -1) {
-      SEL.splice(i, 1);
-    } else {
-      if (th.classList.contains('err')) { flash('Цей файл не відкрився — на слайд його не вставити.'); return; }
-      if (imagesCount() >= BOOT.maxImages) { flash('Максимум ' + BOOT.maxImages + ' картинок разом із картою. Зніміть іншу.'); return; }
-      SEL.push(id);
-    }
-    renderPhotos(); updateLayoutNote();
+  $('selVisible').addEventListener('click', function () {
+    if (RUNNING) return;
+    visibleRows().forEach(function (r) { SEL[r.key] = true; });
+    renderRows(); updateSel();
   });
-  $('selAll').addEventListener('click', function () {
-    SEL = [];
-    (REC.photos || []).forEach(function (p) { if (p.ok && imagesCount() < BOOT.maxImages) SEL.push(p.id); });
-    renderPhotos(); updateLayoutNote();
-  });
-  $('selNone').addEventListener('click', function () { SEL = []; renderPhotos(); updateLayoutNote(); });
-
-  /* ── Координати й карта ── */
-  var SRC_LABEL = { saved: 'із колонки «Координати»', link: 'із посилання Google Maps у заявці', geocode: 'геокодування адреси', none: 'координат немає' };
-  function renderCoords(c) {
-    $('fLat').value = c.lat != null ? String(c.lat) : '';
-    $('fLng').value = c.lng != null ? String(c.lng) : '';
-    var note = SRC_LABEL[c.source] || '';
-    if (c.note) note += ' · ⚠ ' + c.note;
-    if (c.label && c.source === 'geocode') note += ' · ' + c.label;
-    var el = $('coordsNote');
-    el.textContent = note;
-    el.className = 'hint' + (c.lat != null && !c.note ? ' ok' : '');
-    updateMapLink();
-  }
-  function coords() {
-    var la = parseFloat(String($('fLat').value).replace(',', '.')), ln = parseFloat(String($('fLng').value).replace(',', '.'));
-    return (isFinite(la) && isFinite(ln)) ? { lat: la, lng: ln } : null;
-  }
-  function updateMapLink() {
-    var a = $('openMap');
-    var c = coords();
-    if (!BOOT.mapUrl) { a.style.display = 'none'; return; }
-    a.style.display = '';
-    var u = BOOT.mapUrl + (BOOT.mapUrl.indexOf('?') === -1 ? '?' : '&') + 'slide=' + encodeURIComponent(REC ? REC.key : '');
-    if (c) u += '&ll=' + c.lat + ',' + c.lng + '&z=' + BOOT.shotZoom;
-    if (REC) {
-      var addr = String(REC.address || '').replace(/[\s,;]+$/, '');
-      u += '&label=' + encodeURIComponent([addr, REC.city].filter(Boolean).join(', '));
-    }
-    a.href = u;
-  }
-  $('fLat').addEventListener('input', updateMapLink);
-  $('fLng').addEventListener('input', updateMapLink);
-  $('geoBtn').addEventListener('click', function () {
-    var q = [$('fAddr').value, REC.city, REC.region].filter(Boolean).join(', ');
-    $('coordsNote').textContent = 'Пошук: ' + q + '…';
-    api('apiGeocode', q).then(function (g) {
-      if (!g.ok) { renderCoords({ source: 'none', note: g.reason }); return; }
-      renderCoords({ lat: g.lat, lng: g.lng, source: 'geocode', precision: g.precision, note: g.note, label: g.label });
-    }).catch(function (e) { renderCoords({ source: 'none', note: e.message }); });
-  });
-  $('saveCoords').addEventListener('click', function () {
-    var c = coords();
-    if (!c) { flash('Впишіть широту й довготу числами.'); return; }
-    api('apiSaveCoords', REC.key, REC.row, c.lat, c.lng).then(function () {
-      REC.coordsSaved = c.lat + ', ' + c.lng;
-      renderCoords({ lat: c.lat, lng: c.lng, source: 'saved' });
-      flash('Координати збережено в таблицю.');
-    }).catch(function (e) { flash(e.message); });
-  });
-
-  function renderShots(list, err) {
-    var html = '<div class="th none' + (MAP_SEL ? '' : ' on') + '" data-shot="">без карти</div>' + list.map(function (s) {
-      return '<div class="th' + (MAP_SEL === s.id ? ' on' : '') + (s.ok ? '' : ' err') + '" data-shot="' + esc(s.id) + '" title="' + esc(s.name) + '">' +
-        (s.thumb ? '<img src="' + s.thumb + '" alt="">' : '') + '<span class="n">🗺</span>' +
-        '<span class="cap">' + esc(s.created || '') + ' · ' + esc(s.name) + '</span></div>';
-    }).join('');
-    if (err) html += '<div class="hint">' + esc(err) + '</div>';
-    $('shots').innerHTML = html;
-    updateLayoutNote();
-  }
-  $('shots').addEventListener('click', function (e) {
-    var th = e.target.closest('[data-shot]');
-    if (!th) return;
-    var id = th.getAttribute('data-shot');
-    if (id && th.classList.contains('err')) { flash('Цей файл не відкрився.'); return; }
-    if (id && !MAP_SEL && imagesCount() >= BOOT.maxImages) { flash('Максимум ' + BOOT.maxImages + ' картинок. Зніміть одне фото, щоб додати карту.'); return; }
-    MAP_SEL = id;
-    renderShots(REC.mapShots || []);
-  });
-  function refreshShots() {
-    $('shotsRefresh').textContent = '…';
-    return api('apiListMapShots', REC.key).then(function (res) {
-      REC.mapShots = res.shots || [];
-      if (MAP_SEL && !REC.mapShots.some(function (s) { return s.id === MAP_SEL; })) MAP_SEL = '';
-      if (!MAP_SEL && REC.mapShots.length && REC.mapShots[0].ok) MAP_SEL = REC.mapShots[0].id;
-      renderShots(REC.mapShots);
-    }).catch(function (e) { flash(e.message); }).then(function () { $('shotsRefresh').textContent = '↻ Оновити список'; });
-  }
-  $('shotsRefresh').addEventListener('click', refreshShots);
-  $('shotFile').addEventListener('change', function () {
-    var f = this.files && this.files[0];
-    if (!f) return;
-    var rd = new FileReader();
-    rd.onload = function () {
-      api('apiUploadMapShot', REC.key, rd.result).then(function (res) {
-        REC.mapShots = [res.shot].concat(REC.mapShots || []);
-        MAP_SEL = res.shot.id;
-        renderShots(REC.mapShots);
-      }).catch(function (e) { flash(e.message); });
-    };
-    rd.readAsDataURL(f);
-    this.value = '';
-  });
-  /* Повернулись із вкладки карти — підтягуємо нові знімки самі. */
-  document.addEventListener('visibilitychange', function () {
-    if (document.visibilityState === 'visible' && REC && !BUSY) refreshShots();
+  $('selNone').addEventListener('click', function () {
+    if (RUNNING) return;
+    SEL = {}; renderRows(); updateSel();
   });
 
   /* ── Презентації ── */
   function loadDecks() {
-    return api('apiListDecks').then(function (res) {
-      DECKS = res.decks || [];
-      renderDecks();
-    }).catch(function (e) { flash('Презентації: ' + e.message); });
+    return api('apiListDecks').then(function (res) { DECKS = res.decks || []; renderDecks(); })
+      .catch(function (e) { flash('Презентації: ' + e.message); });
   }
   function renderDecks() {
     var sel = $('deck');
     var remembered = '';
     try { remembered = localStorage.getItem('slides.deck') || ''; } catch (e) {}
-    /* Презентація, у якій уже є слайд цієї заявки, — перша кандидатка. */
-    var own = REC && REC.slideUrl ? (REC.slideUrl.match(/\/presentation\/d\/([-\w]+)/) || [])[1] : '';
     sel.innerHTML = DECKS.map(function (d) {
       return '<option value="' + esc(d.id) + '">' + esc(d.name) + ' · ' + d.slides + ' сл. · ' + esc(d.created) + '</option>';
     }).join('') || '<option value="">— створіть презентацію —</option>';
-    var want = (own && DECKS.some(function (d) { return d.id === own; })) ? own
-             : (remembered && DECKS.some(function (d) { return d.id === remembered; })) ? remembered
-             : (DECKS[0] ? DECKS[0].id : '');
-    sel.value = want;
+    sel.value = (remembered && DECKS.some(function (d) { return d.id === remembered; })) ? remembered : (DECKS[0] ? DECKS[0].id : '');
     deckChanged();
   }
   function deckChanged() {
@@ -342,8 +124,6 @@
     var a = $('deckLink');
     if (d) { a.href = d.url; a.style.display = ''; } else a.style.display = 'none';
     try { if (id) localStorage.setItem('slides.deck', id); } catch (e) {}
-    var own = REC && REC.slideUrl && REC.slideUrl.indexOf('/d/' + id + '/') !== -1;
-    $('build').textContent = own ? 'Оновити слайд у цій презентації' : 'Створити слайд';
   }
   $('deck').addEventListener('change', deckChanged);
   $('newDeck').addEventListener('click', function () {
@@ -358,66 +138,86 @@
     }).catch(function (e) { flash(e.message); }).then(function () { $('newDeck').disabled = false; });
   });
 
-  /* ── Створення ── */
-  function payload() {
-    var own = REC.slideUrl && REC.slideUrl.indexOf('/d/' + $('deck').value + '/') !== -1;
-    return {
-      key: REC.key, row: REC.row, deckId: $('deck').value,
-      address: $('fAddr').value.trim(),
-      area: num($('fArea').value), priceUah: num($('fPrice').value),
-      proposal: $('fProp').value.trim(), note: $('fNote').value.trim(),
-      photos: SEL.slice(), mapFileId: MAP_SEL || '', coords: coords(), replace: !!own
-    };
+  /* ── Пакетне створення: по одній заявці за виклик ── */
+  function logLine(cls, html) {
+    var d = document.createElement('div');
+    d.className = 'li ' + cls;
+    d.innerHTML = html;
+    $('log').appendChild(d);
+    d.scrollIntoView({ block: 'nearest' });
+    return d;
   }
-  function validate(p) {
-    if (!p.deckId) return 'Оберіть або створіть презентацію.';
-    var n = p.photos.length + (p.mapFileId ? 1 : 0);
-    if (n < 1) return 'Оберіть хоча б одне фото або карту.';
-    if (n > BOOT.maxImages) return 'Забагато картинок: максимум ' + BOOT.maxImages + '.';
-    if (p.priceUah == null && REC.priceRaw) return 'Впишіть вартість у гривнях: у формі вона «' + REC.priceRaw + '».';
-    if (p.area == null) return 'Впишіть площу числом.';
-    return '';
+  function describe(res) {
+    var bits = ['фото: ' + res.photos + (res.skipped ? ' (пропущено ' + res.skipped + ')' : '')];
+    bits.push(res.map === 'shot' ? 'карта: знімок із карти мережі' : res.map === 'static' ? 'карта: авто, точок поруч ' + res.mapPoints : 'карти немає');
+    bits.push('ціна: ' + res.price);
+    return bits.join(' · ');
   }
+  function setRunning(on) {
+    RUNNING = on; STOP = false;
+    $('stop').style.display = on ? '' : 'none';
+    $('newDeck').disabled = on; $('deck').disabled = on; $('reload').disabled = on;
+    updateSel();
+  }
+  $('stop').addEventListener('click', function () { STOP = true; $('stop').disabled = true; $('buildMsg').textContent = 'Зупиняю після поточної заявки…'; });
+
   $('build').addEventListener('click', function () {
-    if (BUSY || !REC) return;
-    var p = payload();
-    var err = validate(p);
-    if (err) { showResult(false, err); return; }
-    if (p.replace && !window.confirm('У цій презентації вже є слайд цієї заявки. Замінити його?')) return;
-    BUSY = true; $('build').disabled = true; $('buildMsg').textContent = 'Збираю слайд… зазвичай 10–30 секунд';
-    $('result').style.display = 'none';
-    api('apiBuildSlide', p).then(function (res) {
-      REC.slideUrl = res.slideUrl; REC.slideDeck = res.deckName;
-      var r = ROWS.filter(function (x) { return x.key === REC.key; })[0];
-      if (r) { r.slideUrl = res.slideUrl; r.slideDeck = res.deckName; }
-      showResult(true, (res.replaced ? 'Слайд оновлено' : 'Слайд створено') + ': <a href="' + esc(res.slideUrl) + '" target="_blank" rel="noopener">відкрити слайд ↗</a> · ' +
-        '<a href="' + esc(res.deckUrl) + '" target="_blank" rel="noopener">презентація «' + esc(res.deckName) + '»</a>' +
-        (res.note ? '<div class="small">' + esc(res.note) + '</div>' : '') +
-        ' <button class="btn small" id="nextRow">Наступна заявка без слайда →</button>');
-      $('hSlide').style.display = ''; $('hSlide').textContent = 'Слайд щойно збережено в презентацію «' + res.deckName + '».';
-      renderRows(); loadDecks();
-    }).catch(function (e) {
-      showResult(false, 'Не вдалося: ' + e.message);
-    }).then(function () { BUSY = false; $('build').disabled = false; $('buildMsg').textContent = ''; });
-  });
-  document.addEventListener('click', function (e) {
-    if (!e.target.closest('#nextRow')) return;
-    var next = ROWS.filter(function (r) { return !r.slideUrl; })[0];
-    if (next) openRow(next.key, next.row); else flash('Заявок без слайда більше немає.');
+    if (RUNNING) return;
+    var rows = selectedRows();
+    var deckId = $('deck').value;
+    if (!rows.length) { flash('Відмітьте хоча б одну заявку.'); return; }
+    if (!deckId) { flash('Оберіть або створіть презентацію.'); return; }
+    var replace = $('replace').checked;
+    var deckName = (DECKS.filter(function (d) { return d.id === deckId; })[0] || {}).name || '';
+    var dup = rows.filter(function (r) { return r.slideUrl && r.slideUrl.indexOf('/d/' + deckId + '/') !== -1; });
+    if (dup.length && replace && !window.confirm('У презентації «' + deckName + '» уже є слайди для ' + dup.length + ' з відмічених заявок. Замінити їх?')) return;
+
+    setRunning(true);
+    $('stop').disabled = false;
+    $('progress').style.display = '';
+    $('log').innerHTML = '';
+    var done = 0, okN = 0, errN = 0, total = rows.length, okKeys = {};
+    $('progCount').textContent = '0 з ' + total;
+    $('buildMsg').textContent = 'Збираю слайди… кожен 15–60 секунд';
+
+    var next = function () {
+      if (STOP || done >= total) { finish(); return; }
+      var r = rows[done];
+      var line = logLine('run', '⏳ ' + esc(r.city) + ', ' + esc(r.address));
+      api('apiBuildSlide', { key: r.key, row: r.row, deckId: deckId, replace: replace }).then(function (res) {
+        okN++; okKeys[r.key] = true;
+        r.slideUrl = res.slideUrl; r.slideDeck = res.deckName;
+        line.className = 'li ok';
+        line.innerHTML = '✔ ' + esc(r.city) + ', ' + esc(r.address) + ' — <a href="' + esc(res.slideUrl) + '" target="_blank" rel="noopener">слайд ↗</a>' +
+          '<div class="d">' + esc(describe(res)) + (res.notes && res.notes.length ? '<br>' + esc(res.notes.join(' · ')) : '') + '</div>';
+      }).catch(function (e) {
+        errN++;
+        line.className = 'li err';
+        line.innerHTML = '✘ ' + esc(r.city) + ', ' + esc(r.address) + ' — ' + esc(e.message);
+      }).then(function () {
+        done++;
+        $('progCount').textContent = done + ' з ' + total;
+        next();
+      });
+    };
+    var finish = function () {
+      var d = DECKS.filter(function (x) { return x.id === deckId; })[0];
+      logLine('ok', '<b>Готово:</b> ' + okN + ' слайдів' + (errN ? ', помилок ' + errN : '') + (STOP && done < total ? ', зупинено' : '') +
+        (d ? ' · <a href="' + esc(d.url) + '" target="_blank" rel="noopener">відкрити презентацію «' + esc(d.name) + '» ↗</a>' : ''));
+      $('buildMsg').textContent = '';
+      /* Знімаємо вибір лише з того, що вдалося: невдалі лишаються відміченими для повтору. */
+      rows.forEach(function (r) { if (okKeys[r.key]) delete SEL[r.key]; });
+      setRunning(false);
+      renderRows(); updateSel(); loadDecks();
+    };
+    next();
   });
 
-  function showResult(ok, html) {
-    var el = $('result');
-    el.className = 'result' + (ok ? '' : ' err');
-    el.innerHTML = html;
-    el.style.display = '';
-    el.scrollIntoView({ block: 'nearest' });
-  }
   var flashT = null;
   function flash(text) {
     $('buildMsg').textContent = text;
     clearTimeout(flashT);
-    flashT = setTimeout(function () { $('buildMsg').textContent = ''; }, 4000);
+    flashT = setTimeout(function () { if (!RUNNING) $('buildMsg').textContent = ''; }, 4000);
   }
 
   /* ── Колонки форми (діагностика) ── */
@@ -431,12 +231,15 @@
   });
 
   /* ── Старт ── */
-  loadRows().then(function () { if (BOOT.key) openRow(BOOT.key, BOOT.row); });
+  loadDecks();
+  loadRows().then(function () {
+    if (BOOT.key && ROWS.some(function (r) { return r.key === BOOT.key; })) { SEL[BOOT.key] = true; renderRows(); updateSel(); }
+  });
 
   /* Для тестів. */
   window.__wiz = {
-    state: function () { return { rows: ROWS.length, key: REC && REC.key, sel: SEL.slice(), map: MAP_SEL, decks: DECKS.length, layout: $('layoutNote').textContent, build: $('build').textContent }; },
-    open: openRow, payload: payload
+    state: function () { return { rows: ROWS.length, visible: visibleRows().length, sel: Object.keys(SEL), decks: DECKS.length,
+      running: RUNNING, build: $('build').textContent, log: $('log').textContent }; }
   };
 })();
 </script>

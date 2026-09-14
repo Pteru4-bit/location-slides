@@ -118,6 +118,30 @@ ok(!cfgCtx.__cfg.REJECTED_MATCH.test('Депо/термінал'), '«Депо/�
 eq(P.defaultProposal('Не підходить'), 'Відкриття', 'пропозиція для відхиленої — порожня заготовка');
 eq(P.defaultProposal('Відділення, Депо/термінал'), 'Відкриття: Відділення, Депо/термінал', 'кілька значень — як є після двокрапки');
 
+console.log('Пакетний режим: сітка мініатюр і вікно карти');
+let g = P.gridFor(2, 8.74, 4.55);
+eq([g.cols, g.rows], [2, 1], '2 фото → 2 колонки в один ряд');
+g = P.gridFor(4, 8.74, 4.55);
+eq([g.cols, g.rows], [2, 2], '4 фото → 2×2 (клітинки більші, ніж при 3×2)');
+g = P.gridFor(15, 8.74, 4.55);
+eq([g.cols, g.rows], [5, 3], '15 фото → 5×3');
+ok(g.cellW > 1.6 && g.cellH > 1.4, 'клітинка при 15 фото ≈ 1,7×1,5 дюйма', g.cellW.toFixed(2) + '×' + g.cellH.toFixed(2));
+eq(P.gridFor(0, 8, 4), null, 'без фото → null');
+const c5 = P.gridCell(g, 5, 0.05, 1.37);
+ok(Math.abs(c5.x - 0.05) < 1e-9 && c5.y > 1.37 + g.cellH, 'шоста клітинка (індекс 5) — початок другого ряду', JSON.stringify(c5));
+let f = P.fitInto(4 / 3, 0, 0, 4, 4);
+eq([f.width, f.height, f.top], [4, 3, 0.5], 'широке фото в квадрат: по ширині, по центру вертикально');
+f = P.fitInto(3 / 4, 0, 0, 4, 4);
+eq([f.width, f.height, f.left], [3, 4, 0.5], 'вертикальне фото в квадрат: по висоті, по центру горизонтально');
+const bb15 = P.mercatorBbox(50.45, 30.52, 15, 640, 480), bb13 = P.mercatorBbox(50.45, 30.52, 13, 640, 480);
+ok(bb15.latMin < 50.45 && bb15.latMax > 50.45 && bb15.lngMin < 30.52 && bb15.lngMax > 30.52, 'центр усередині вікна карти');
+ok(Math.abs((bb13.lngMax - bb13.lngMin) / (bb15.lngMax - bb15.lngMin) - 4) < 0.01, 'z13 у 4 рази ширше за z15');
+ok(Math.abs((bb15.lngMax - bb15.lngMin) - 640 * 360 / (256 * 32768)) < 1e-9, 'ширина вікна = 640 px × градусів на піксель');
+const rules = [{ match: /відділен|пвз|пункт|поштомат|дроп/i, zoom: 15 }, { match: /депо|термінал/i, zoom: 13 }];
+eq(P.zoomForType('Відділення', rules, 14), 15, 'відділення → z15');
+eq(P.zoomForType('Депо/термінал', rules, 14), 13, 'депо/термінал → z13');
+eq(P.zoomForType('Не підходить', rules, 14), 14, 'невідомий тип → типовий');
+
 console.log('Службове');
 eq(P.parseSlideUrl('https://docs.google.com/presentation/d/1abcDEF_-xyz/edit#slide=id.g2f1a2b3c4d_0_5'),
    { deckId: '1abcDEF_-xyz', slideId: 'g2f1a2b3c4d_0_5' }, 'дека і слайд із записаного посилання');

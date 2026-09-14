@@ -199,6 +199,67 @@ function keyFromTimestampString(s) {
   return t.replace(/\D/g, '');
 }
 
+/* ── Пакетний режим: сітка мініатюр і вікно карти ──────────────────── */
+
+/* Сітка для n фото в області W×H (дюйми): скільки колонок дає НАЙБІЛЬШІ
+   мініатюри. Фото вважаємо 4:3 і вставляємо цілком (без обрізання), тому
+   оцінка клітинки — менше з її ширини і висоти×4/3. */
+function gridFor(n, W, H, gap) {
+  gap = (gap == null) ? 0.08 : gap;
+  n = Number(n) || 0;
+  if (n < 1) return null;
+  var best = null;
+  for (var cols = 1; cols <= Math.min(n, 6); cols++) {
+    var rows = Math.ceil(n / cols);
+    var cw = (W - gap * (cols - 1)) / cols, ch = (H - gap * (rows - 1)) / rows;
+    var score = Math.min(cw, ch * 4 / 3);
+    if (!best || score > best.score + 1e-9) best = { cols: cols, rows: rows, cellW: cw, cellH: ch, gap: gap, score: score };
+  }
+  return best;
+}
+
+/* Клітинка №i сітки (зліва направо, згори вниз) у координатах області. */
+function gridCell(grid, i, x0, y0) {
+  var r = Math.floor(i / grid.cols), c = i % grid.cols;
+  return { x: x0 + c * (grid.cellW + grid.gap), y: y0 + r * (grid.cellH + grid.gap), w: grid.cellW, h: grid.cellH };
+}
+
+/* Вписати картинку з пропорцією ratio (ширина/висота) у прямокутник цілком,
+   по центру, без обрізання. */
+function fitInto(ratio, x, y, w, h) {
+  if (!(ratio > 0)) ratio = 4 / 3;
+  var fw = w, fh = w / ratio;
+  if (fh > h) { fh = h; fw = h * ratio; }
+  return { left: x + (w - fw) / 2, top: y + (h - fh) / 2, width: fw, height: fh };
+}
+
+/* Межі видимої області статичної карти (Web Mercator, тайл 256 px):
+   що потрапляє в кадр wPx×hPx із центром lat,lng на масштабі zoom. */
+function mercatorBbox(lat, lng, zoom, wPx, hPx) {
+  var world = 256 * Math.pow(2, zoom);
+  var toRad = Math.PI / 180;
+  var x = (lng + 180) / 360 * world;
+  var s = Math.sin(lat * toRad);
+  var y = (0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)) * world;
+  var inv = function (px, py) {
+    var lng2 = px / world * 360 - 180;
+    var n = Math.PI - 2 * Math.PI * py / world;
+    var lat2 = 180 / Math.PI * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+    return { lat: lat2, lng: lng2 };
+  };
+  var a = inv(x - wPx / 2, y - hPx / 2), b = inv(x + wPx / 2, y + hPx / 2);
+  return { latMin: Math.min(a.lat, b.lat), latMax: Math.max(a.lat, b.lat), lngMin: Math.min(a.lng, b.lng), lngMax: Math.max(a.lng, b.lng) };
+}
+
+/* Масштаб карти за типом обʼєкта: відділенню треба квартал, депо — місто. */
+function zoomForType(objType, rules, fallback) {
+  var t = normText(objType);
+  for (var i = 0; i < (rules || []).length; i++) {
+    if (rules[i].match.test(t)) return rules[i].zoom;
+  }
+  return fallback;
+}
+
 /* Для node-тестів: Apps Script цього блоку не бачить (module там немає). */
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = { normText: normText, parseNumberLoose: parseNumberLoose, parseArea: parseArea,
@@ -206,5 +267,6 @@ if (typeof module !== 'undefined' && module.exports) {
     extractDriveIds: extractDriveIds, coordsFromText: coordsFromText, isShortMapLink: isShortMapLink,
     layoutFor: layoutFor, MAX_IMAGES: MAX_IMAGES, defaultProposal: defaultProposal,
     headerMatch: headerMatch, headerMatchAll: headerMatchAll, letterIndex: letterIndex,
-    parseSlideUrl: parseSlideUrl, keyFromTimestampString: keyFromTimestampString, inUkraine: inUkraine };
+    parseSlideUrl: parseSlideUrl, keyFromTimestampString: keyFromTimestampString, inUkraine: inUkraine,
+    gridFor: gridFor, gridCell: gridCell, fitInto: fitInto, mercatorBbox: mercatorBbox, zoomForType: zoomForType };
 }

@@ -21,90 +21,42 @@ window.__BOOT = <?!= boot ?>;
 </header>
 
 <main id="main">
-  <aside id="list">
+  <section id="list">
     <div class="listbar">
       <input id="q" type="search" placeholder="Пошук: місто, адреса, МРМ…" autocomplete="off">
       <label class="chk"><input type="checkbox" id="onlyNew" checked> лише без слайда</label>
       <label class="chk" title="Заявки, де «Підходить для:» = «Не підходить»"><input type="checkbox" id="showRejected"> показувати «Не підходить»</label>
+      <span class="sp"></span>
+      <button class="btn small ghost" id="selVisible">Обрати всі видимі</button>
+      <button class="btn small ghost" id="selNone">Зняти все</button>
     </div>
     <div id="rows" class="rows"><div class="muted pad">Завантаження заявок…</div></div>
-  </aside>
-
-  <section id="wiz">
-    <div id="empty" class="empty">
-      <div class="big">Оберіть заявку зліва</div>
-      <div class="muted">Майстер покаже дані з форми, фото й карту, а слайд збере за один клік.</div>
-    </div>
-
-    <div id="form" style="display:none">
-      <div class="head">
-        <div class="h1"><span id="hCity"></span><span class="muted">, </span><span id="hAddr"></span></div>
-        <div class="meta" id="hMeta"></div>
-        <div class="meta warn" id="hSlide" style="display:none"></div>
-      </div>
-
-      <div class="card">
-        <div class="ct">Таблиця на слайді</div>
-        <div class="grid4">
-          <label>Адреса<input id="fAddr" type="text"></label>
-          <label>Площа, м²<input id="fArea" type="text" inputmode="decimal"><small id="fAreaRaw" class="muted"></small></label>
-          <label>Вартість, грн<input id="fPrice" type="text" inputmode="numeric"><small id="fPriceRaw" class="muted"></small></label>
-          <label>Вартість за м²<input id="fM2" type="text" readonly tabindex="-1"><small class="muted">рахується само</small></label>
-        </div>
-        <div id="priceHint" class="hint" style="display:none"></div>
-      </div>
-
-      <div class="card">
-        <div class="ct">Тексти</div>
-        <div class="grid2">
-          <label>Пропозиція<input id="fProp" type="text"><small class="muted">на слайді: «Пропозиція: …»</small></label>
-          <label>Примітка під фото<input id="fNote" type="text" placeholder="напр. Рампи під орендаря (до 5 шт)"><small class="muted">порожньо — без підпису</small></label>
-        </div>
-      </div>
-
-      <div class="card">
-        <div class="ct">Фото <span class="muted" id="photoCount"></span>
-          <span class="right"><button class="btn small ghost" id="selAll">Усі</button> <button class="btn small ghost" id="selNone">Жодного</button></span>
-        </div>
-        <div class="muted small">Клік — обрати або зняти. Номер — порядок на слайді; стрілки міняють місцями.</div>
-        <div id="photos" class="thumbs"></div>
-        <div id="layoutNote" class="hint"></div>
-      </div>
-
-      <div class="card">
-        <div class="ct">Карта</div>
-        <div class="coords">
-          <label>Широта<input id="fLat" type="text" inputmode="decimal"></label>
-          <label>Довгота<input id="fLng" type="text" inputmode="decimal"></label>
-          <button class="btn ghost" id="geoBtn" title="Знайти адресу геокодером">Знайти за адресою</button>
-          <button class="btn ghost" id="saveCoords">Зберегти координати</button>
-          <a class="btn" id="openMap" target="_blank" rel="noopener">Відкрити карту мережі ↗</a>
-        </div>
-        <div id="coordsNote" class="hint"></div>
-        <div class="ct sub">Знімок карти
-          <span class="right"><button class="btn small ghost" id="shotsRefresh">↻ Оновити список</button>
-          <label class="btn small ghost file">Завантажити файл<input type="file" id="shotFile" accept="image/png,image/jpeg"></label></span>
-        </div>
-        <div class="muted small">На карті мережі натисніть «Зберегти карту в Drive» — знімок зʼявиться тут. Найновіший обирається сам.</div>
-        <div id="shots" class="thumbs"></div>
-      </div>
-
-      <div class="card">
-        <div class="ct">Презентація</div>
-        <div class="deckrow">
-          <select id="deck"></select>
-          <button class="btn ghost" id="newDeck">+ Нова презентація</button>
-          <a id="deckLink" class="lnk" target="_blank" rel="noopener" style="display:none">відкрити презентацію ↗</a>
-        </div>
-      </div>
-
-      <div class="actions">
-        <button class="btn primary" id="build">Створити слайд</button>
-        <span id="buildMsg" class="muted"></span>
-      </div>
-      <div id="result" class="result" style="display:none"></div>
-    </div>
   </section>
+
+  <aside id="side">
+    <div class="card">
+      <div class="ct">Обрано заявок: <span id="selCount">0</span></div>
+      <div class="muted small">Клік по заявці — відмітити. Для кожної відміченої буде зібрано слайд: усі фото заявки мініатюрами без обрізання, карта «що поруч», таблиця з даними форми, «Пропозиція: …». Далі правки — у Презентаціях.</div>
+    </div>
+    <div class="card">
+      <div class="ct">Презентація</div>
+      <div class="deckrow">
+        <select id="deck"></select>
+        <button class="btn ghost" id="newDeck">+ Нова презентація</button>
+        <a id="deckLink" class="lnk" target="_blank" rel="noopener" style="display:none">відкрити ↗</a>
+      </div>
+      <label class="chk" style="margin-top:8px"><input type="checkbox" id="replace" checked> замінювати слайди, які вже є в цій презентації</label>
+    </div>
+    <div class="actions">
+      <button class="btn primary" id="build">Створити слайди</button>
+      <button class="btn ghost" id="stop" style="display:none">Зупинити</button>
+      <span id="buildMsg" class="muted"></span>
+    </div>
+    <div id="progress" class="card" style="display:none">
+      <div class="ct">Хід роботи <span class="muted" id="progCount"></span></div>
+      <div id="log" class="log"></div>
+    </div>
+  </aside>
 </main>
 
 <footer id="foot">

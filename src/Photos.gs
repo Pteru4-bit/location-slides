@@ -1,18 +1,18 @@
 /***********************************************************************
- *  Photos — файли з Диска: мініатюри для майстра і картинки для слайда.
+ *  Photos — файли з Диска для слайда.
  *
- *  Чому не оригінали. Форма приймає що завгодно: JPEG із телефону на 8 МБ,
- *  WebP з оголошення, HEIC з айфона. Google Slides вставляє лише PNG, JPEG
- *  і GIF, а дека з тридцятьма оригіналами важить сотні мегабайт. Тому на
- *  слайд іде JPEG-мініатюра, яку Диск генерує сам для будь-якого формату:
- *  посилання thumbnailLink закінчується на «=s220», і цей розмір можна
- *  попросити інший. Виняток — PNG-скріншоти карти: вони невеликі, а текст
- *  на карті в JPEG розмивається, тож їх вставляємо як є.
+ *  На слайд ідуть ОРИГІНАЛИ (CFG.IMAGE_MAX_PX = 0): мініатюра на слайді —
+ *  це те саме фото, лише зменшене; розтягнув — маєш повну якість. Винятки,
+ *  які Google Slides не приймає: WebP і HEIC (форма їх пропускає), фото
+ *  понад 25 Мпкс і файли понад 45 МБ — для них береться велика
+ *  JPEG-мініатюра Диска: посилання thumbnailLink закінчується на «=s220»,
+ *  і розмір можна попросити інший. Не-зображення (PDF, документи)
+ *  пропускаються з поясненням.
  ***********************************************************************/
 
 function driveFile_(id) {
   return Drive.Files.get(id, {
-    fields: 'id,name,mimeType,size,createdTime,thumbnailLink,webViewLink',
+    fields: 'id,name,mimeType,size,createdTime,thumbnailLink,webViewLink,imageMediaMetadata(width,height)',
     supportsAllDrives: true
   });
 }
@@ -39,97 +39,50 @@ function thumbBlob_(file, px) {
 }
 
 var SLIDES_NATIVE_MIME = { 'image/png': 1, 'image/jpeg': 1, 'image/gif': 1 };
+var SLIDES_MAX_BYTES = 45 * 1024 * 1024;
+var SLIDES_MAX_PIXELS = 24.5e6;
+var THUMB_FALLBACK_PX = 4096;
 
-/* Картинка для слайда: PNG як є, решта — мініатюра IMAGE_PX. */
-function slideImageBlob_(id) {
+/* Картинка для слайда: { blob, name, mode } або кидає помилку з причиною. */
+function slideImage_(id) {
   var f = driveFile_(id);
-  var mime = String(f.mimeType || '');
-  if (mime === 'image/png' && Number(f.size || 0) < 12 * 1024 * 1024) {
-    return DriveApp.getFileById(id).getBlob();
+  var mime = String(f.mimeType || ''), name = f.name || id;
+  if (mime.indexOf('image/') !== 0) throw new Error(name + ': не зображення (' + (mime || 'невідомий тип') + ')');
+  var meta = f.imageMediaMetadata || {};
+  var tooBig = Number(f.size || 0) > SLIDES_MAX_BYTES ||
+               (Number(meta.width) * Number(meta.height)) > SLIDES_MAX_PIXELS;
+  var maxPx = Number(CFG.IMAGE_MAX_PX) || 0;
+
+  if (!maxPx && SLIDES_NATIVE_MIME[mime] && !tooBig) {
+    return { blob: DriveApp.getFileById(id).getBlob(), name: name, mode: 'оригінал' };
   }
-  var b = thumbBlob_(f, CFG.IMAGE_PX);
-  if (b) return b;
-  if (SLIDES_NATIVE_MIME[mime] && Number(f.size || 0) < 20 * 1024 * 1024) return DriveApp.getFileById(id).getBlob();
-  throw new Error('Диск ще не створив мініатюру для «' + (f.name || id) + '» (' + mime + '). Спробуйте за хвилину або замініть файл на JPEG/PNG.');
-}
-
-function dataUrl_(blob) {
-  return 'data:' + blob.getContentType() + ';base64,' + Utilities.base64Encode(blob.getBytes());
-}
-
-/* Записи для майстра: мініатюра THUMB_PX як data URL. Помилка одного файлу
-   не ламає решту — людина побачить, який саме файл не відкрився.
-   Мініатюри тягнуться ОДНИМ fetchAll: у заявці буває 10–15 фото, і по черзі
-   це десять секунд очікування замість двох. */
-function photoEntries_(ids) {
-  var metas = (ids || []).map(function (id) {
-    try { return { id: id, f: driveFile_(id) }; }
-    catch (e) { return { id: id, error: (e && e.message) || String(e) }; }
-  });
-  var token = ScriptApp.getOAuthToken();
-  var reqs = [], at = [];
-  metas.forEach(function (m, i) {
-    if (m.f && m.f.thumbnailLink) {
-      reqs.push({ url: thumbLinkSized_(m.f.thumbnailLink, CFG.THUMB_PX), headers: { Authorization: 'Bearer ' + token },
-                  muteHttpExceptions: true, followRedirects: true });
-      at.push(i);
-    }
-  });
-  var resps = [];
-  if (reqs.length) {
-    try { resps = UrlFetchApp.fetchAll(reqs); } catch (e) { resps = []; }
+  var px = maxPx || THUMB_FALLBACK_PX;
+  var b = thumbBlob_(f, px);
+  if (b) return { blob: b, name: name, mode: 'мініатюра ' + px };
+  if (SLIDES_NATIVE_MIME[mime] && !tooBig) {
+    return { blob: DriveApp.getFileById(id).getBlob(), name: name, mode: 'оригінал' };
   }
-  var thumbs = {};
-  resps.forEach(function (r, j) {
-    try {
-      var ct = String(r.getHeaders()['Content-Type'] || r.getHeaders()['content-type'] || '');
-      if (r.getResponseCode() === 200 && ct.indexOf('image/') === 0) thumbs[at[j]] = dataUrl_(r.getBlob());
-    } catch (e2) {}
-  });
-  return metas.map(function (m, i) {
-    if (!m.f) return { id: m.id, ok: false, name: m.id, error: m.error, thumb: '' };
-    var f = m.f, thumb = thumbs[i] || '';
-    if (!thumb && SLIDES_NATIVE_MIME[f.mimeType] && Number(f.size || 0) < 4 * 1024 * 1024) {
-      try { thumb = dataUrl_(DriveApp.getFileById(m.id).getBlob()); } catch (e3) {}
-    }
-    return { id: m.id, ok: true, name: f.name || m.id, mime: f.mimeType || '',
-             url: f.webViewLink || ('https://drive.google.com/open?id=' + m.id), thumb: thumb };
-  });
+  throw new Error(name + ': Диск ще не створив мініатюру (' + mime + ') — спробуйте за хвилину');
 }
 
-/* ── Карти, збережені картою мережі ── */
+/* ── Знімки, збережені кнопкою 💾 у карті мережі ── */
 
 function shotsFolder_() {
   var id = cfg_('MAP_SHOTS_FOLDER_ID');
-  if (!id) throw new Error('Не задано MAP_SHOTS_FOLDER_ID — папку, куди карта мережі зберігає PNG (initMapShotsFolder()).');
+  if (!id) return null;
   return DriveApp.getFolderById(id);
 }
 
-/* Файли slide-<ключ>-*.png, найновіші першими, з мініатюрами. */
-function listMapShots_(key) {
+/* Найновіший slide-<ключ>-*.png або null. */
+function latestMapShot_(key) {
   var folder = shotsFolder_();
+  if (!folder || !/^[\w-]{1,40}$/.test(key)) return null;
   var it = folder.searchFiles("title contains 'slide-" + key + "-' and trashed = false");
-  var files = [];
-  while (it.hasNext() && files.length < 12) {
+  var best = null;
+  while (it.hasNext()) {
     var f = it.next();
-    files.push({ id: f.getId(), name: f.getName(), created: f.getDateCreated(), url: f.getUrl() });
+    if (!best || f.getDateCreated() > best.getDateCreated()) best = f;
   }
-  files.sort(function (a, b) { return b.created - a.created; });
-  return files.slice(0, 6).map(function (f) {
-    var e = photoEntries_([f.id])[0];
-    e.name = f.name; e.created = Utilities.formatDate(f.created, tz_(), 'dd.MM HH:mm'); e.url = f.url;
-    return e;
-  });
-}
-
-/* Ручне завантаження з майстра (запасний шлях, коли кнопки на карті немає). */
-function uploadMapShot_(key, dataUrl, email) {
-  if (!/^[\w-]{1,40}$/.test(key)) throw new Error('Некоректний ключ заявки.');
-  var m = String(dataUrl || '').match(/^data:(image\/(?:png|jpeg));base64,(.+)$/);
-  if (!m) throw new Error('Очікується PNG або JPEG.');
-  var blob = Utilities.newBlob(Utilities.base64Decode(m[2]), m[1]);
-  var name = 'slide-' + key + '-manual-' + Utilities.formatDate(new Date(), tz_(), 'yyyyMMdd-HHmmss') + (m[1] === 'image/png' ? '.png' : '.jpg');
-  var f = shotsFolder_().createFile(blob.setName(name));
-  logEvent_(email, 'карта вручну', name);
-  return photoEntries_([f.getId()])[0];
+  if (!best) return null;
+  return { id: best.getId(), name: best.getName(), blob: best.getBlob() };
 }

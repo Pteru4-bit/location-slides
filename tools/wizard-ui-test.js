@@ -1,15 +1,15 @@
 /*
- * wizard-ui-test.js — майстер слайда в справжньому браузері, без Google.
+ * wizard-ui-test.js — пакетний режим у справжньому браузері, без Google.
  *
- *   node tools/wizard-ui-test.js
+ *   node tools/wizard-ui-test.js        (Playwright: NODE_PATH=$(npm root -g), якщо глобальний)
  *
  * Сторінка збирається з src/Wizard*.html так само, як це робить Apps Script
  * (include → вставка), а замість google.script.run підставляється
- * window.__TEST_API з даними трьох реальних заявок. Перевіряється те, що
- * найлегше зламати правкою інтерфейсу: список і фільтр, типовий вибір фото,
- * стеля «5 картинок разом із картою», порядок фото, обовʼязкова вартість у
- * гривнях, payload, який іде на сервер, і кнопка «Оновити», коли слайд у цій
- * деці вже є. Помилки JS на сторінці — теж провал.
+ * window.__TEST_API з даними чотирьох реальних заявок. Перевіряється те,
+ * що найлегше зламати правкою інтерфейсу: фільтри й вибір, «Не підходить»
+ * сховано типово, нова презентація, пакетний прогін по одній заявці за
+ * виклик із правильним payload, помилка однієї заявки не зупиняє решту,
+ * «Зупинити», посилання «карта ↗». Помилки JS на сторінці — провал.
  */
 'use strict';
 const fs = require('fs'), path = require('path'), http = require('http');
@@ -28,54 +28,39 @@ function ok(pass, title, detail) {
   if (!pass) failed++;
 }
 
-const BOOT = { email: 'test@novaposhta.ua', mapUrl: 'https://script.google.com/a/x/macros/s/MAP/exec', key: '', row: 0, shotZoom: 15, maxImages: 5 };
-const thumb = (label, color) => 'data:image/svg+xml;utf8,' + encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" width="160" height="120"><rect width="160" height="120" fill="' + color + '"/><text x="10" y="60" font-size="18" fill="#fff">' + label + '</text></svg>');
-const photo = (id, name, okk) => ({ id, ok: okk !== false, name, mime: 'image/jpeg', url: '#', thumb: okk === false ? '' : thumb(name, '#5a7'), error: okk === false ? 'нема доступу' : '' });
+const BOOT = { email: 'test@novaposhta.ua', mapUrl: 'https://script.google.com/a/x/macros/s/MAP/exec', key: '', shotZoom: 15, photoMax: 20 };
+const base = { ts: '', date: '', author: '', region: '', deal: 'Оренда', areaRaw: '', area: null, priceRaw: '', priceUah: null, ramps: '', yard: '', video: '',
+  comment: '', reviewDate: '', reviewer: '', decision: '', branch: '', source: '', mapLink: '', slideUrl: '', slideUpdated: '', slideBy: '', slideDeck: '', coordsSaved: '', rejected: false };
+const RECS = [
+  Object.assign({}, base, { row: 2, key: '20260826-181927', ts: '26.08.2026 18:19', date: '26.08.2026', author: 'Дусь Т.', region: 'Чернігівська обл.', city: 'Чернігів', address: 'Дрозда, 16',
+    areaRaw: '1000', area: 1000, priceRaw: 'Договірна, ще заянято до жовтня', objType: 'Депо/термінал', branch: 'Лівобережжя', photoIds: ['p1', 'p2'], proposalDefault: 'Відкриття депо або терміналу' }),
+  Object.assign({}, base, { row: 3, key: '20260828-184042', ts: '28.08.2026 18:40', date: '28.08.2026', author: 'Колодій Д', region: 'Чернівецька обл.', city: 'Чернівці', address: 'Чкалова, 34',
+    areaRaw: '800кв.м.', area: 800, priceRaw: '160000', priceUah: 160000, objType: 'Відділення', branch: 'Правобережжя',
+    mapLink: 'https://www.google.com.ua/maps/@48.2664111,25.9582113,19.71z', photoIds: ['q1', 'q2', 'q3'],
+    slideUrl: 'https://docs.google.com/presentation/d/DECK1/edit#slide=id.g1', slideDeck: 'Розгляд 09.09', proposalDefault: 'Відкриття відділення' }),
+  Object.assign({}, base, { row: 4, key: '20260827-222034', ts: '27.08.2026 22:20', date: '27.08.2026', author: 'Нижник Н.', region: 'Київська обл.', city: 'Київ', address: 'Велика Кільцева',
+    areaRaw: 'до 5 300', area: 5300, priceRaw: 'від 15 $/м² з ПДВ + комунальні та експлуатаційні витрати 10%', objType: 'Депо/термінал', branch: 'Київ та обл',
+    photoIds: ['k1', 'k2', 'k3', 'k4', 'k5', 'k6', 'k7', 'k8', 'k9', 'k10', 'k11', 'k12', 'k13', 'k14', 'k15'], proposalDefault: 'Відкриття депо або терміналу' }),
+  Object.assign({}, base, { row: 5, key: '20260909-090000', ts: '09.09.2026 09:00', date: '09.09.2026', author: 'Хураскін А.', region: 'Одеська обл.', city: 'Одеса', address: 'вул. Академіка Сахарова 1',
+    objType: 'Не підходить', rejected: true, decision: 'мала площа', coordsSaved: '46.5, 30.7', photoIds: ['o1'], proposalDefault: 'Відкриття' })
+];
 
-const RECS = {
-  '20260826-181927': { row: 2, key: '20260826-181927', ts: '26.08.2026 18:19', date: '26.08.2026', author: 'Дусь Т.', region: 'Чернігівська обл.', city: 'Чернігів', address: 'Дрозда, 16', deal: 'Оренда',
-    areaRaw: '1000', area: 1000, priceRaw: 'Договірна, ще заянято до жовтня', priceUah: null, ramps: '2, + можоивість зробмти 5+', comment: 'Від власника', objType: 'Депо/термінал',
-    reviewDate: '26.08.2026', reviewer: 'Корнієнко', decision: 'На розгляді', branch: 'Лівобережжя', source: 'МРМ знайшов самостійно', mapLink: '', photoIds: ['p1', 'p2'],
-    slideUrl: '', slideUpdated: '', slideBy: '', slideDeck: '', coordsSaved: '', proposalDefault: 'Відкриття депо або терміналу',
-    photos: [photo('p1', 'фасад.jpg'), photo('p2', 'склад.jpg')],
-    coords: { lat: 51.53568, lng: 31.25321, source: 'geocode', precision: 'building', note: '', label: 'вулиця Володимира Дрозда, 16, Чернігів' },
-    mapShots: [{ id: 'm1', ok: true, name: 'slide-20260826-181927-20260910-1200.png', created: '10.09 12:00', thumb: thumb('карта', '#48c'), url: '#' }] },
-  '20260828-184042': { row: 3, key: '20260828-184042', ts: '28.08.2026 18:40', date: '28.08.2026', author: 'Колодій Д', region: 'Чернівецька обл.', city: 'Чернівці', address: 'Чкалова, 34', deal: 'Оренда',
-    areaRaw: '800кв.м.', area: 800, priceRaw: '160000', priceUah: 160000, ramps: '1', comment: 'наразі в процесі переговорів', objType: 'Відділення',
-    reviewDate: '', reviewer: '', decision: '', branch: 'Правобережжя', source: 'Рієлтор', mapLink: 'https://www.google.com.ua/maps/@48.2664111,25.9582113,19.71z', photoIds: ['q1', 'q2', 'q3'],
-    slideUrl: 'https://docs.google.com/presentation/d/DECK1/edit#slide=id.g1', slideUpdated: '09.09.2026 10:00', slideBy: 'x@novaposhta.ua', slideDeck: 'Розгляд 09.09', coordsSaved: '', proposalDefault: 'Відкриття відділення',
-    photos: [photo('q1', 'фасад.jpg'), photo('q2', 'цех.jpg'), photo('q3', 'третє.heic', false)],
-    coords: { lat: 48.266411, lng: 25.958211, source: 'link', precision: 'building', note: '' }, mapShots: [] },
-  '20260827-222034': { row: 4, key: '20260827-222034', ts: '27.08.2026 22:20', date: '27.08.2026', author: 'Нижник Н.', region: 'Київська обл.', city: 'Київ', address: 'Велика Кільцева', deal: 'Оренда',
-    areaRaw: 'до 5 300', area: 5300, priceRaw: 'від 15 $/м² з ПДВ + комунальні та експлуатаційні витрати 10%', priceUah: null, ramps: '8', comment: 'https://www.olx.ua/…', objType: 'Депо/термінал',
-    reviewDate: '27.08.2026', reviewer: 'Труфанов М', decision: '15$, мала к-сть рамп', branch: 'Київ та обл', source: 'Рієлтор', mapLink: '', photoIds: ['k1', 'k2', 'k3', 'k4', 'k5', 'k6'],
-    slideUrl: '', slideUpdated: '', slideBy: '', slideDeck: '', coordsSaved: '', proposalDefault: 'Відкриття депо або терміналу',
-    photos: ['k1', 'k2', 'k3', 'k4', 'k5', 'k6'].map((id) => photo(id, id + '.webp')),
-    coords: { lat: 50.38357, lng: 30.43296, source: 'geocode', precision: 'area', note: 'знайдено приблизно — район або населений пункт', label: 'Кільцева дорога, Київ' },
-    mapShots: [{ id: 'km', ok: true, name: 'slide-20260827-222034-20260910-1300.png', created: '10.09 13:00', thumb: thumb('карта', '#48c'), url: '#' }] }
-};
-RECS['20260909-090000'] = Object.assign({}, RECS['20260828-184042'], { row: 5, key: '20260909-090000', city: 'Одеса', address: 'вул. Академіка Сахарова 1',
-  objType: 'Не підходить', rejected: true, decision: 'мала площа', slideUrl: '', slideDeck: '', yard: 'так', video: 'https://example.com/360',
-  proposalDefault: 'Відкриття', photos: [photo('o1', 'фасад.jpg')], photoIds: ['o1'], mapShots: [] });
-const rowsList = () => Object.keys(RECS).map((k) => RECS[k]).sort((a, b) => b.key.localeCompare(a.key));
-
-/* Мок API живе на сторінці: усі виклики записуються у window.__calls. */
 const MOCK = `
 window.__calls = []; window.__decks = [{ id: 'DECK1', name: 'Розгляд 09.09', url: 'https://docs.google.com/presentation/d/DECK1/edit', created: '09.09.2026 09:00', by: 'x', slides: 3 }];
 const RECS = ${JSON.stringify(RECS)};
-const rows = () => Object.values(RECS).map(r => Object.assign({}, r, { photos: undefined, coords: undefined, mapShots: undefined })).sort((a,b) => b.key.localeCompare(a.key));
-const rec = (k) => { const r = RECS[k]; if (!r) throw new Error('немає ' + k); return JSON.parse(JSON.stringify(r)); };
 window.__TEST_API = {
-  apiListRows: () => { __calls.push(['apiListRows']); return { ok: true, rows: rows() }; },
-  apiGetRow: (k) => { __calls.push(['apiGetRow', k]); return { ok: true, rec: rec(k) }; },
-  apiListMapShots: (k) => { __calls.push(['apiListMapShots', k]); return { ok: true, shots: rec(k).mapShots }; },
-  apiUploadMapShot: (k, d) => ({ ok: true, shot: { id: 'up1', ok: true, name: 'slide-' + k + '-manual.png', created: 'зараз', thumb: d, url: '#' } }),
-  apiGeocode: (q) => { __calls.push(['apiGeocode', q]); return { ok: true, lat: 50.45, lng: 30.52, label: 'знайдено: ' + q, precision: 'building', note: '' }; },
-  apiSaveCoords: (k, r, la, ln) => { __calls.push(['apiSaveCoords', k, la, ln]); return { ok: true }; },
+  apiListRows: () => { __calls.push(['apiListRows']); return { ok: true, rows: JSON.parse(JSON.stringify(RECS)).sort((a, b) => b.key.localeCompare(a.key)) }; },
   apiListDecks: () => ({ ok: true, decks: __decks.slice() }),
   apiCreateDeck: (n) => { const d = { id: 'DECK' + (__decks.length + 1), name: n, url: '#', created: 'зараз', by: 'test', slides: 0 }; __decks.unshift(d); return { ok: true, deck: d }; },
-  apiBuildSlide: (p) => { __calls.push(['apiBuildSlide', p]); if (p.deckId === 'FAIL') throw new Error('сервер відмовив'); return { ok: true, slideUrl: 'https://docs.google.com/presentation/d/' + p.deckId + '/edit#slide=id.NEW', deckUrl: '#', deckName: 'дека', layout: 'row', images: p.photos.length + (p.mapFileId ? 1 : 0), replaced: !!p.replace, note: '' }; },
+  apiBuildSlide: (p) => new Promise((res, rej) => setTimeout(() => {
+    __calls.push(['apiBuildSlide', p]);
+    if (p.key === '20260827-222034' && window.__failKyiv) return rej(new Error('Диск ще не створив мініатюру'));
+    const r = RECS.filter((x) => x.key === p.key)[0];
+    r.slideUrl = 'https://docs.google.com/presentation/d/' + p.deckId + '/edit#slide=id.NEW_' + p.key;
+    res({ ok: true, slideUrl: r.slideUrl, deckUrl: '#', deckName: 'дека', replaced: !!p.replace && p.key === '20260828-184042',
+          photos: r.photoIds.length, skipped: 0, map: p.key === '20260826-181927' ? 'shot' : 'static', mapPoints: 17,
+          price: r.priceUah != null ? 'число' : 'текст із форми', coords: 'geocode', notes: ['карта: статична карта, z13, точок мережі в кадрі: 17'] });
+  }, 30)),
   apiColumnReport: () => ({ ok: true, lines: ['ts → 1', 'city → 5'] })
 };`;
 
@@ -101,107 +86,72 @@ function build() {
   const st = () => pg.evaluate(() => window.__wiz.state());
   const calls = () => pg.evaluate(() => window.__calls);
 
-  console.log('Список');
-  ok((await pg.$$('.row')).length === 2, 'фільтр «лише без слайда» ховає заявку зі слайдом, «Не підходить» схована типово (2 з 4)');
+  console.log('Список і вибір');
+  ok((await st()).visible === 2, 'типово: без слайда і без «Не підходить» — 2 з 4');
   await pg.uncheck('#onlyNew');
-  ok((await pg.$$('.row')).length === 3, 'без фільтра слайдів — три, відхилена й далі схована');
+  ok((await st()).visible === 3, 'без фільтра слайдів — 3, відхилена схована');
   await pg.check('#showRejected');
-  ok((await pg.$$('.row')).length === 4 && (await pg.$$('.row .badge.rej')).length === 1, '«показувати Не підходить» → четверта з червоною поміткою');
-  await pg.click('.row[data-key="20260909-090000"]');
-  await pg.waitForFunction(() => window.__wiz.state().key === '20260909-090000');
-  ok(/не підходить/.test(await pg.textContent('#hMeta')) && /автодвір: так/.test(await pg.textContent('#hMeta')), 'у шапці: помітка «не підходить», автодвір');
-  ok((await pg.$eval('#hMeta a', (a) => a.href)) === 'https://example.com/360', 'відео 360 — посилання');
-  await pg.uncheck('#showRejected');
-  await pg.fill('#q', 'чернів');
-  ok((await pg.$$('.row')).length === 1, 'пошук за містом');
-  await pg.fill('#q', '');
-
-  console.log('Чернігів: 2 фото + карта');
-  await pg.click('.row[data-key="20260826-181927"]');
-  await pg.waitForFunction(() => window.__wiz.state().key === '20260826-181927');
+  ok((await st()).visible === 4 && (await pg.$$('.row .badge.rej')).length === 1, '«показувати Не підходить» → 4, одна з червоною поміткою');
+  await pg.uncheck('#showRejected'); await pg.check('#onlyNew');
+  ok((await pg.$eval('#build', (b) => b.disabled)), 'без вибору кнопка неактивна');
+  await pg.click('#selVisible');
   let s = await st();
-  ok(s.sel.length === 2 && s.sel[0] === 'p1', 'обидва фото обрано типово, у порядку форми');
-  ok(s.map === 'm1', 'найновіший знімок карти обрано сам');
-  ok(/один ряд \(3 із 3\)/.test(s.layout), 'макет: один ряд, 3 із 3', s.layout);
-  ok(await pg.$eval('#priceHint', (e) => e.style.display !== 'none'), 'підказка: вартість у формі не в гривнях');
-  ok((await pg.$eval('#openMap', (e) => e.href)).indexOf('ll=51.53568,31.25321&z=15') !== -1, 'посилання на карту несе координати й ключ',
-     await pg.$eval('#openMap', (e) => e.href));
-  ok((await pg.$eval('#openMap', (e) => e.href)).indexOf('slide=20260826-181927') !== -1, '…і ключ заявки для назви файлу');
-  await pg.fill('#fPrice', '100 000');
-  ok((await pg.$eval('#fM2', (e) => e.value)) === '100', 'вартість за м² рахується: 100 000 / 1000 = 100');
-  /* порядок фото: стрілка «пізніше» на першому */
-  await pg.click('.th[data-id="p1"] [data-mv="1"]');
-  s = await st();
-  ok(s.sel[0] === 'p2' && s.sel[1] === 'p1', 'стрілка міняє порядок фото');
-  /* створити слайд без деки в списку? дека DECK1 є — але спершу без вартості */
-  await pg.fill('#fPrice', '');
-  await pg.click('#build');
-  await pg.waitForSelector('#result.err');
-  ok(/вартість у гривнях/i.test(await pg.textContent('#result')), 'без вартості слайд не збирається, є пояснення');
-  await pg.fill('#fPrice', '100000');
+  ok(s.sel.length === 2 && /\(2\)/.test(s.build), '«Обрати всі видимі» → 2, кнопка «Створити слайди (2)»', s.build);
+  await pg.click('.row[data-key="20260826-181927"]');
+  ok((await st()).sel.length === 1, 'клік по заявці знімає вибір');
+  await pg.click('.row[data-key="20260826-181927"]');
+  ok((await st()).sel.length === 2, '…і повертає');
+  const kyivRow = await pg.textContent('.row[data-key="20260827-222034"]');
+  ok(/фото: 15/.test(kyivRow) && /ціна текстом/.test(kyivRow), 'у рядку видно кількість фото і що ціна текстом');
+  await pg.uncheck('#onlyNew');
+  const mapHref = await pg.$eval('.row[data-key="20260828-184042"] a[data-nosel]', (a) => a.href);
+  ok(/slide=20260828-184042/.test(mapHref) && /ll=48\.2664111,25\.9582113/.test(mapHref), '«карта ↗» несе ключ і координати з посилання Google Maps', mapHref);
+  await pg.$eval('.row[data-key="20260828-184042"] a[data-nosel]', (a) => { a.removeAttribute('target'); a.href = 'javascript:void(0)'; });
+  await pg.click('.row[data-key="20260828-184042"] a[data-nosel]');
+  ok((await st()).sel.length === 2, 'клік по «карта ↗» не міняє вибір');
+  await pg.check('#onlyNew');
+
+  console.log('Презентація і пакет');
   await pg.click('#newDeck');
   await pg.waitForFunction(() => window.__wiz.state().decks === 2);
-  ok((await pg.$eval('#deck', (e) => e.value)) === 'DECK2', 'нова дека створена й обрана');
+  ok((await pg.$eval('#deck', (e) => e.value)) === 'DECK2', 'нова презентація створена й обрана');
   await pg.click('#build');
-  await pg.waitForSelector('#result:not(.err)');
-  const built = (await calls()).filter((c) => c[0] === 'apiBuildSlide').pop()[1];
-  ok(built.deckId === 'DECK2' && built.priceUah === 100000 && built.area === 1000, 'payload: дека, вартість, площа', JSON.stringify(built));
-  ok(JSON.stringify(built.photos) === '["p2","p1"]' && built.mapFileId === 'm1', 'payload: фото в обраному порядку + карта');
-  ok(built.replace === false && built.coords && built.coords.lat === 51.53568, 'payload: новий слайд, координати з майстра');
-  ok(/Слайд створено/.test(await pg.textContent('#result')), 'результат з посиланням');
-  ok((await pg.$$('.row .badge:not(.no)')).length === 2, 'у списку заявка тепер «є слайд»');
+  await pg.waitForFunction(() => /Готово/.test(window.__wiz.state().log));
+  let built = (await calls()).filter((c) => c[0] === 'apiBuildSlide').map((c) => c[1]);
+  ok(built.length === 2, 'два виклики — по одному на заявку', JSON.stringify(built.map((b) => b.key)));
+  ok(built.every((b) => b.deckId === 'DECK2' && b.replace === true && b.row > 0), 'payload: презентація, replace, номер рядка', JSON.stringify(built[0]));
+  const log = (await st()).log;
+  ok(/фото: 15/.test(log) && /точок поруч 17/.test(log) && /ціна: текст із форми/.test(log), 'у журналі: фото, карта, ціна', log.slice(0, 200));
+  ok(/карта: знімок із карти мережі/.test(log), 'для Чернігова — знімок 💾 замість статичної');
+  ok(/Готово:.*2 слайдів/.test(log), 'підсумок: 2 слайди');
+  await pg.uncheck('#onlyNew');
+  ok((await pg.$$('.row .badge a')).length === 3, 'у списку зʼявились посилання «є слайд» (2 нові + 1 стара)');
+  await pg.check('#onlyNew');
+  ok((await st()).sel.length === 0, 'вибір знято після успіху');
+  ok(!(await st()).running && !(await pg.$eval('#stop', (e) => e.style.display !== 'none')), 'прогін завершено, «Зупинити» сховано');
 
-  console.log('Чернівці: слайд у цій деці вже є');
-  await pg.click('.row[data-key="20260828-184042"]');
-  await pg.waitForFunction(() => window.__wiz.state().key === '20260828-184042');
-  await pg.waitForFunction(() => /Оновити/.test(window.__wiz.state().build) || document.getElementById('deck').value !== 'DECK1');
+  console.log('Помилка однієї заявки і повтор у тій самій презентації');
+  await pg.evaluate(() => { window.__failKyiv = true; });
+  await pg.uncheck('#onlyNew');
+  await pg.click('#selVisible');
+  ok((await st()).sel.length === 3, 'три відмічені, одна з них уже має слайд у DECK1');
   await pg.selectOption('#deck', 'DECK1');
-  s = await st();
-  ok(/Оновити слайд/.test(s.build), 'кнопка «Оновити слайд у цій деці» для деки зі слайдом', s.build);
-  ok(s.sel.length === 2, 'файл, що не відкрився, типово не обрано (2 з 3)');
-  ok((await pg.$eval('#fPrice', (e) => e.value)) === '160000' && (await pg.$eval('#fM2', (e) => e.value)) === '200', 'числа з форми підставлено: 160000 → 200 за м²');
-  ok(/посилання Google Maps/.test(await pg.textContent('#coordsNote')), 'джерело координат: посилання з заявки');
-  await pg.click('.th[data-id="q3"]');
-  ok((await st()).sel.length === 2, 'зламаний файл не обирається кліком');
-  ok(/не відкрився/.test(await pg.textContent('#buildMsg')), '…і про це сказано');
-  await pg.selectOption('#deck', 'DECK2');
-  ok(/Створити/.test((await st()).build), 'в іншій деці — «Створити»');
+  await pg.click('#build');   /* confirm про заміну приймається автоматично */
+  await pg.waitForFunction(() => /Готово/.test(window.__wiz.state().log));
+  const log2 = (await st()).log;
+  ok(/✘ Київ/.test(log2) && /Диск ще не створив/.test(log2), 'помилка Києва показана з причиною');
+  ok(/Готово:.*2 слайдів, помилок 1/.test(log2), 'решта зроблена, підсумок чесний', log2.slice(-120));
+  ok((await st()).sel.length === 1 && (await st()).sel[0] === '20260827-222034', 'невдала заявка лишилась відміченою для повтору');
+  built = (await calls()).filter((c) => c[0] === 'apiBuildSlide').map((c) => c[1]);
+  ok(built.filter((b) => b.key === '20260828-184042' && b.deckId === 'DECK1' && b.replace).length === 1, 'Чернівці пішли на заміну в DECK1');
 
-  console.log('Київ: 6 фото + карта, стеля 5');
-  await pg.click('.row[data-key="20260827-222034"]');
-  await pg.waitForFunction(() => window.__wiz.state().key === '20260827-222034');
-  s = await st();
-  ok(s.sel.length === 4 && s.map === 'km', 'типово 4 фото + карта = 5, більше не влазить', JSON.stringify(s.sel));
-  ok(/два ряди \(5 із 5\)/.test(s.layout), 'макет: два ряди, 5 із 5', s.layout);
-  await pg.click('.th[data-id="k5"]');
-  ok((await st()).sel.length === 4, 'шосту картинку не додати');
-  ok(/Максимум 5/.test(await pg.textContent('#buildMsg')), '…з поясненням');
-  await pg.click('.th[data-id="k1"]');
-  await pg.click('.th[data-id="k5"]');
-  s = await st();
-  ok(s.sel.length === 4 && s.sel[3] === 'k5', 'зняв одне — можна додати інше, воно стає останнім');
-  await pg.click('[data-shot=""]');
-  s = await st();
-  ok(s.map === '' && /без карти/.test(s.layout) && /один ряд|два ряди/.test(s.layout), 'без карти: макет за 4 фото', s.layout);
-  ok(/приблизно/.test(await pg.textContent('#coordsNote')), 'попередження про приблизне геокодування');
-  await pg.click('#geoBtn');
-  await pg.waitForFunction(() => /знайдено:/.test(document.getElementById('coordsNote').textContent));
-  ok((await pg.$eval('#fLat', (e) => e.value)) === '50.45', 'геокодер оновив координати');
-  await pg.click('#saveCoords');
-  await pg.waitForFunction(() => window.__calls.some((c) => c[0] === 'apiSaveCoords'));
-  ok(true, 'координати збережено викликом API');
-
-  console.log('Помилка сервера');
-  await pg.evaluate(() => { __decks.unshift({ id: 'FAIL', name: 'зламана', url: '#', created: '', by: '', slides: 0 }); });
-  await pg.click('#reload');
-  await pg.waitForFunction(() => window.__wiz.state().rows === 4);
-  await pg.click('.row[data-key="20260828-184042"]');
-  await pg.waitForFunction(() => window.__wiz.state().key === '20260828-184042' && window.__wiz.state().decks === 3);
-  await pg.selectOption('#deck', 'FAIL');
+  console.log('Зупинка');
+  await pg.evaluate(() => { window.__failKyiv = false; });
+  await pg.click('#selVisible');
   await pg.click('#build');
-  await pg.waitForSelector('#result.err');
-  ok(/сервер відмовив/.test(await pg.textContent('#result')), 'помилка сервера показана людині');
-  ok(!(await pg.$eval('#build', (e) => e.disabled)), 'кнопка знову активна');
+  await pg.click('#stop');
+  await pg.waitForFunction(() => /Готово/.test(window.__wiz.state().log));
+  ok(/зупинено/.test((await st()).log), '«Зупинити» перериває після поточної заявки');
 
   await pg.click('#colsToggle');
   await pg.waitForFunction(() => /city/.test(document.getElementById('cols').textContent));
