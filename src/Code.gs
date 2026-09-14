@@ -58,7 +58,7 @@ function requireAccess_() {
 
 function apiListRows(limit) {
   requireAccess_();
-  return { ok: true, rows: readRecent_(Number(limit) || CFG.ROWS_LIMIT), sheet: responsesSheet_().getName() };
+  return { ok: true, rows: readRecent_(Number(limit) || CFG.ROWS_LIMIT || 0), sheet: responsesSheet_().getName() };
 }
 
 function apiListDecks() {
@@ -110,7 +110,7 @@ var TEST_KEY = '';
 function testBuildOnce() {
   var decks = listDecks_();
   if (!decks.length) { Logger.log('Немає жодної презентації — створіть у застосунку.'); return; }
-  var rows = readRecent_(200);
+  var rows = readRecent_(0);
   var row = TEST_KEY ? rows.filter(function (r) { return r.key === TEST_KEY; })[0]
                      : rows.filter(function (r) { return !r.slideUrl && !r.rejected; })[0];
   if (!row) { Logger.log(TEST_KEY ? 'Заявку з ключем ' + TEST_KEY + ' не знайдено серед останніх 200.' : 'Немає заявок без слайда.'); return; }
@@ -121,4 +121,4 @@ function testBuildOnce() {
 
 /* Версія коду — щоб звірити, чи розгорнуто саме її: checkSetup() її друкує,
    а в застосунку вона в підвалі сторінки. */
-var CODE_VERSION = '2026-09-14.6';
+var CODE_VERSION = '2026-09-14.7';

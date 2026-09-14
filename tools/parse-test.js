@@ -151,6 +151,12 @@ eq(P.zoomForType('Відділення', rules, 14), 15, 'відділення �
 eq(P.zoomForType('Депо/термінал', rules, 14), 13, 'депо/термінал → z13');
 eq(P.zoomForType('Не підходить', rules, 14), 14, 'невідомий тип → типовий');
 
+console.log('Сортування за міткою часу');
+ok(P.timestampMs('26.08.2026 18:19:27') < P.timestampMs('28.08.2026 18:40:42'), 'рядкові мітки форми порівнюються як дати');
+ok(P.timestampMs(new Date(2026, 8, 10, 11, 23)) > P.timestampMs('28.08.2026 18:40:42'), 'Date і рядок в одній шкалі');
+eq(P.timestampMs('немає'), 0, 'без дати → 0 (у кінець списку)');
+ok(P.timestampMs('2026-09-10 11:23') > P.timestampMs('10.09.2026 11:22'), 'ISO-формат теж читається');
+
 console.log('Службове');
 eq(P.parseSlideUrl('https://docs.google.com/presentation/d/1abcDEF_-xyz/edit#slide=id.g2f1a2b3c4d_0_5'),
    { deckId: '1abcDEF_-xyz', slideId: 'g2f1a2b3c4d_0_5' }, 'дека і слайд із записаного посилання');

@@ -157,23 +157,29 @@ function rowRecord_(values, rowNumber) {
   return rec;
 }
 
-/* Останні N заявок, найновіші першими. */
+/* Усі заявки, найсвіжіші першими — за «Позначкою часу», а не за положенням
+   рядка: форма дописує в кінець, але аркуш можуть відсортувати чи вставити
+   рядки вручну. Рядки без мітки часу — в кінці, за номером. limit > 0
+   обмежує список (CFG.ROWS_LIMIT = 0 — показувати все). */
+var READ_MAX_ROWS = 5000;
 function readRecent_(limit) {
   var sh = responsesSheet_();
-  columns_();  /* гарантує службові колонки до читання ширини */
+  var c = columns_();  /* гарантує службові колонки до читання ширини */
   var last = sh.getLastRow();
   if (last < 2) return [];
-  var n = Math.min(limit || CFG.ROWS_LIMIT, last - 1);
+  var n = Math.min(last - 1, READ_MAX_ROWS);
   var first = last - n + 1;
   var width = Math.max(sh.getLastColumn(), 1);
   var vals = sh.getRange(first, 1, n, width).getValues();
-  var out = [];
-  for (var i = vals.length - 1; i >= 0; i--) {
+  var recs = [];
+  for (var i = 0; i < vals.length; i++) {
     var v = vals[i];
     if (!v.some(function (x) { return x !== '' && x != null; })) continue;   /* порожні хвости */
-    out.push(rowRecord_(v, first + i));
+    recs.push({ row: first + i, t: timestampMs(v[c.idx.ts]), v: v });
   }
-  return out;
+  recs.sort(function (a, b) { return (b.t - a.t) || (b.row - a.row); });
+  if (limit > 0) recs = recs.slice(0, limit);
+  return recs.map(function (r) { return rowRecord_(r.v, r.row); });
 }
 
 /* Рядок за ключем; hintRow — де він був минулого разу (перевіряється). */
