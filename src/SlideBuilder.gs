@@ -18,8 +18,11 @@ var PT = 72; /* пунктів у дюймі */
    мають вбудовані поля 0,1", яких API не міняє, тому шрифти таблиці менші
    за PowerPoint-оригінал, щоб висота вийшла та сама (~0,8"). */
 var GEOM = {
-  title:    [0.16, 0.10, 5.45, 0.71],
-  table:    { box: [4.19, 0.10, 8.25, 0.80], cols: [1.85, 1.55, 2.60, 2.25], rows: [0.30, 0.30] },
+  title:    [0.16, 0.10, 4.80, 0.71],
+  subtitle: [0.16, 0.86, 4.80, 0.40],   /* «Оренда · МРМ: …» під містом (рішення 2026-09-21) */
+  /* Таблиця тієї самої ширини, що на зразках, але зсунута праворуч: правий
+     край 13,26" збігається з правим краєм карти у верхньому ряду. */
+  table:    { box: [5.01, 0.10, 8.25, 0.80], cols: [1.85, 1.55, 2.60, 2.25], rows: [0.30, 0.30] },
   topRow:   { y: 1.37, h: 3.64, x: [0.05, 4.47, 8.89], w: 4.37 },
   strip:    [0.05, 5.10, 8.74, 1.80],   /* решта фото мініатюрами */
   proposalRight:  [8.95, 5.15, 4.30, 1.50],   /* коли є смуга мініатюр */
@@ -62,7 +65,19 @@ function textBox_(slide, geom, k, text, size, bold, color, align) {
 }
 
 function addTitle_(slide, k, city) {
-  return textBox_(slide, GEOM.title, k, city || '', 36, true, STYLE.titleColor);
+  /* Довгі назви («Івано-Франківськ» ще вміщується) дрібніші, щоб не наїхати на таблицю. */
+  var size = normText(city).length > 14 ? 30 : 36;
+  return textBox_(slide, GEOM.title, k, city || '', size, true, STYLE.titleColor);
+}
+
+/* «Оренда · МРМ: Дусь Т.» — тип угоди жирним, далі хто подав. */
+function addSubtitle_(slide, k, deal, author) {
+  var d = normText(deal), a = normText(author);
+  var text = [d, a ? 'МРМ: ' + a : ''].filter(Boolean).join(' · ');
+  if (!text) return null;
+  var shape = textBox_(slide, GEOM.subtitle, k, text, 14, false, '#22303C');
+  if (d) { try { shape.getText().getRange(0, d.length).getTextStyle().setBold(true); } catch (e) {} }
+  return shape;
 }
 
 /* Таблиця 2×4 як на зразках. Ширини колонок, висоти рядків і рамки
@@ -175,13 +190,13 @@ function buildSlide_(payload, email) {
     catch (e) { skipped.push((e && e.message) || String(e)); }
   });
 
-  /* 2. Таблиця: число, коли воно є, інакше текст із форми як є. */
+  /* 2. Таблиця: площа і вартість — ТЕКСТОМ із форми, як увів респондент
+     (рішення 2026-09-21). Вартість за м² у формі немає: рахується лише
+     коли обидва значення читаються як числа, інакше тире. */
   var area = rec.area, price = rec.priceUah;
-  var cells = [rec.address,
-               area != null ? formatInt(area) : rec.areaRaw,
-               price != null ? formatInt(price) : rec.priceRaw,
+  var cells = [rec.address, rec.areaRaw, rec.priceRaw,
                (price != null && area > 0) ? formatInt(pricePerM2(price, area)) : ''];
-  var priceMode = price != null ? 'число' : (rec.priceRaw ? 'текст із форми' : 'порожньо');
+  var priceMode = rec.priceRaw ? 'з форми як є' : 'порожньо';
 
   /* 3. Координати й карта. */
   var coords = resolveCoords_(rec);
@@ -203,6 +218,8 @@ function buildSlide_(payload, email) {
   try {
     stage = 'заголовок';
     addTitle_(slide, k, rec.city);
+    stage = 'підзаголовок';
+    addSubtitle_(slide, k, rec.deal, rec.author);
     stage = 'таблиця';
     tableId = addTable_(slide, k, cells);
     stage = 'фото';
